@@ -1,6 +1,6 @@
 'use server';
 
-import { dailyQuoteFromChart, normalizeYahooSymbol, type YahooDailyQuote } from '@/lib/yahoo';
+import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, yahooChartSymbol, type Candle, type YahooDailyQuote } from '@/lib/yahoo';
 
 // Daily Tadawul quotes from Yahoo Finance (free, no key, covers .SR), keyed by the symbol passed in.
 // One chart call per symbol (no batch endpoint without login) behind a shared 5-minute cache,
@@ -24,4 +24,26 @@ export async function getYahooDailyQuotes(symbols: string[]): Promise<Record<str
         }),
     );
     return Object.fromEntries(entries.filter(([, q]) => q)) as Record<string, YahooDailyQuote>;
+}
+
+// Two years of daily candles for the native chart: a year to show plus enough lead-in for the 200-day average to
+// start at the left edge. [] means "no data we trust" (unmapped symbol, Yahoo error, too few bars), and the
+// stock page then falls back to the TradingView embed instead of drawing a stub.
+const MIN_CANDLES = 30;
+
+export async function getDailyCandles(symbol: string): Promise<Candle[]> {
+    const yahooSymbol = yahooChartSymbol(symbol);
+    if (!yahooSymbol) return [];
+    try {
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=2y`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            next: { revalidate: 300 },
+        });
+        if (!res.ok) return [];
+        const candles = candlesFromChart(await res.json());
+        return candles.length >= MIN_CANDLES ? candles : [];
+    } catch (e) {
+        console.error('Yahoo candles error', symbol, e);
+        return [];
+    }
 }

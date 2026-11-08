@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell, Search, Star } from "lucide-react";
 import CreateAlertModal from "./CreateAlertModal";
 import WatchlistButton from "@/components/WatchlistButton";
+import TagPicker from "./TagPicker";
 import ChangePill from "@/components/ChangePill";
 import PriceFlash from "@/components/PriceFlash";
 import { useLiveQuotes } from "@/hooks/useLiveQuotes";
@@ -16,7 +17,15 @@ import type { getWatchlistData } from "@/lib/actions/finnhub.actions";
 type Row = Awaited<ReturnType<typeof getWatchlistData>>[number];
 const SUGGESTIONS = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN'];
 
-export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) {
+export default function WatchlistTable({
+    initialRows,
+    tagsBySymbol = {},
+    emptyLabel,
+}: {
+    initialRows: Row[];
+    tagsBySymbol?: Record<string, string[]>;
+    emptyLabel?: string;
+}) {
     const [baseRows, setBaseRows] = useState(initialRows);
     const live = useLiveQuotes(baseRows.map((r) => r.symbol));
 
@@ -27,6 +36,10 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
         const q = live[r.symbol];
         return q?.c ? { ...r, price: q.c, change: q.d ?? r.change, changePercent: q.dp ?? r.changePercent } : r;
     });
+
+    if (rows.length === 0 && emptyLabel) {
+        return <div className="px-3.5 py-6 text-center text-[13px] text-faint">{emptyLabel}</div>;
+    }
 
     if (rows.length === 0) {
         return (
@@ -90,6 +103,7 @@ export default function WatchlistTable({ initialRows }: { initialRows: Row[] }) 
                                     ) : (
                                         <span className="icon-btn opacity-40" title="Alerts are available for US stocks and crypto"><Bell /></span>
                                     )}
+                                    <TagPicker symbol={row.symbol} tags={tagsBySymbol[row.symbol] ?? []} />
                                     <WatchlistButton
                                         symbol={row.symbol}
                                         company={row.name}

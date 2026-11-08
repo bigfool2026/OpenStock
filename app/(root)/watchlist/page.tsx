@@ -10,6 +10,7 @@ import NewsList from '@/components/watchlist/NewsList';
 import Panel from '@/components/Panel';
 import DataFreshness from '@/components/DataFreshness';
 import { SearchButton } from '@/components/SearchCommand';
+import { WATCHLIST_TAGS, UNTAGGED, TAG_BLURB, sortTags } from '@/lib/watchlist-tags';
 
 const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     <div className="row-list" aria-busy="true">
@@ -23,8 +24,46 @@ const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     </div>
 );
 
-async function Symbols({ symbols }: { symbols: string[] }) {
-    return <WatchlistTable initialRows={await getWatchlistData(symbols)} />;
+type Item = { symbol: string; tags?: string[] };
+
+// One quote fetch for the whole watchlist, then split into group panels so a symbol
+// in both MAGS and SEMI is priced once and shown twice.
+async function Symbols({ items }: { items: Item[] }) {
+    const rows = await getWatchlistData(items.map((i) => i.symbol));
+    const tagsBySymbol = Object.fromEntries(items.map((i) => [i.symbol, sortTags(i.tags ?? [])]));
+
+    const groups = [...WATCHLIST_TAGS, UNTAGGED]
+        .map((tag) => ({
+            tag,
+            rows: rows.filter((r) =>
+                tag === UNTAGGED ? !tagsBySymbol[r.symbol]?.length : tagsBySymbol[r.symbol]?.includes(tag)
+            ),
+        }))
+        .filter((g) => g.rows.length > 0);
+
+    // Empty watchlist, or nothing categorised yet: one flat table, same as before.
+    if (groups.length <= 1) {
+        return (
+            <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
+                <WatchlistTable initialRows={rows} tagsBySymbol={tagsBySymbol} />
+            </Panel>
+        );
+    }
+
+    return (
+        <div className="flex flex-col gap-3">
+            {groups.map(({ tag, rows: groupRows }) => (
+                <Panel
+                    key={tag}
+                    title={tag}
+                    sub={`${groupRows.length} ${groupRows.length === 1 ? 'symbol' : 'symbols'} · ${TAG_BLURB[tag] ?? ''}`}
+                    action={<SearchButton className="btn btn-ghost"><Plus /> Add</SearchButton>}
+                >
+                    <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} emptyLabel="No symbols in this category" />
+                </Panel>
+            ))}
+        </div>
+    );
 }
 
 async function News({ symbols }: { symbols: string[] }) {
@@ -51,11 +90,13 @@ export default async function WatchlistPage() {
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
                 <div className="flex min-w-0 flex-col gap-3">
-                    <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
-                        <Suspense fallback={<RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />}>
-                            <Symbols symbols={symbols} />
-                        </Suspense>
-                    </Panel>
+                    <Suspense fallback={
+                        <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
+                            <RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />
+                        </Panel>
+                    }>
+                        <Symbols items={items} />
+                    </Suspense>
                     <Panel title="News" sub={symbols.length ? 'Latest stories for the symbols you watch' : 'General market news'}>
                         <Suspense fallback={<RowsSkeleton />}>
                             <News symbols={symbols} />

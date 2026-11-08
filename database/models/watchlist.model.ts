@@ -4,6 +4,7 @@ export interface WatchlistItem extends Document {
     userId: string;
     symbol: string;
     company: string;
+    tags: string[];
     addedAt: Date;
 }
 
@@ -12,6 +13,7 @@ const WatchlistSchema = new Schema<WatchlistItem>(
         userId: { type: String, required: true, index: true },
         symbol: { type: String, required: true, uppercase: true, trim: true },
         company: { type: String, required: true, trim: true },
+        tags: { type: [String], default: [] },
         addedAt: { type: Date, default: Date.now },
     },
     { timestamps: false }
@@ -19,6 +21,8 @@ const WatchlistSchema = new Schema<WatchlistItem>(
 
 // Prevent duplicate symbols per user
 WatchlistSchema.index({ userId: 1, symbol: 1 }, { unique: true });
+// The watchlist page reads one group at a time
+WatchlistSchema.index({ userId: 1, tags: 1 });
 
 export const Watchlist: Model<WatchlistItem> =
     (models?.Watchlist as Model<WatchlistItem>) || model<WatchlistItem>('Watchlist', WatchlistSchema);

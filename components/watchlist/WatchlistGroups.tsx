@@ -45,7 +45,7 @@ export default async function WatchlistGroups({ items }: { items: Item[] }) {
                         key={tag}
                         title={tag}
                         sub={`${groupRows.length} ${groupRows.length === 1 ? 'symbol' : 'symbols'} · ${TAG_BLURB[tag] ?? ''}`}
-                        action={<SearchButton className="btn btn-ghost"><Plus /> Add</SearchButton>}
+                        action={<SearchButton add tag={tag === UNTAGGED ? undefined : tag} className="btn btn-ghost"><Plus /> Add</SearchButton>}
                     >
                         <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} sparks={sparks} emptyLabel="No symbols in this category" />
                     </Panel>

@@ -41,7 +41,7 @@ export default async function WatchlistPage() {
                         {symbols.length} {symbols.length === 1 ? 'symbol' : 'symbols'} <span aria-hidden>·</span> <DataFreshness />
                     </p>
                 </div>
-                <SearchButton className="btn btn-primary"><Plus /> Add symbol</SearchButton>
+                <SearchButton add className="btn btn-primary"><Plus /> Add symbol</SearchButton>
             </header>
 
             <div className="flex min-w-0 flex-col gap-3">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, tadawulAppSymbol, yahooChartSymbol } from '@/lib/yahoo';
+import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, sparklinesFromSpark, tadawulAppSymbol, yahooChartSymbol } from '@/lib/yahoo';
 import { formatSymbolForTradingView, isChartEmbeddable } from '@/lib/utils';
 
 describe('Tadawul symbols', () => {
@@ -112,5 +112,23 @@ describe('candlesFromChart', () => {
         expect(candlesFromChart({ chart: { result: null } })).toEqual([]);
         expect(candlesFromChart(null)).toEqual([]);
         expect(candlesFromChart({})).toEqual([]);
+    });
+});
+
+describe('sparklinesFromSpark', () => {
+    const item = (symbol: string, close: (number | null)[]) => ({ symbol, response: [{ indicators: { quote: [{ close }] } }] });
+
+    it('returns closes keyed by symbol, dropping null holes', () => {
+        const out = sparklinesFromSpark({ spark: { result: [item('AAPL', [1, null, 3, 4]), item('NVDA', [5, 6])] } });
+        expect(out).toEqual({ AAPL: [1, 3, 4], NVDA: [5, 6] });
+    });
+    it('leaves out a symbol with fewer than two prices', () => {
+        const out = sparklinesFromSpark({ spark: { result: [item('NEW', [9]), item('GONE', [null, null]), item('OK', [1, 2])] } });
+        expect(Object.keys(out)).toEqual(['OK']);
+    });
+    it('tolerates an error payload or garbage', () => {
+        expect(sparklinesFromSpark({ spark: { result: null, error: { code: 'x' } } })).toEqual({});
+        expect(sparklinesFromSpark(null)).toEqual({});
+        expect(sparklinesFromSpark({ spark: { result: [{ response: [] }] } })).toEqual({});
     });
 });

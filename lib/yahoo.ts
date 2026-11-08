@@ -110,3 +110,25 @@ export function candlesFromChart(json: unknown): Candle[] {
     });
     return [...byDay.values()].sort((a, b) => (a.time < b.time ? -1 : 1));
 }
+
+type YahooSparkJson = {
+    spark?: {
+        result?: Array<{
+            symbol?: string;
+            response?: Array<{ indicators?: { quote?: Array<{ close?: (number | null)[] }> } }>;
+        }>;
+    };
+};
+
+// Closing prices per symbol from a /v7/finance/spark response, which prices many symbols in one request.
+// Null closes are dropped, and a symbol with fewer than two prices is left out so the caller shows a dash.
+export function sparklinesFromSpark(json: unknown): Record<string, number[]> {
+    const out: Record<string, number[]> = {};
+    for (const item of (json as YahooSparkJson)?.spark?.result ?? []) {
+        const closes = (item.response?.[0]?.indicators?.quote?.[0]?.close ?? []).filter(
+            (n): n is number => typeof n === 'number' && Number.isFinite(n),
+        );
+        if (item.symbol && closes.length >= 2) out[item.symbol] = closes;
+    }
+    return out;
+}

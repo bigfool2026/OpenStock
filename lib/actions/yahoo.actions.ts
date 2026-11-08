@@ -1,6 +1,6 @@
 'use server';
 
-import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, yahooChartSymbol, type Candle, type YahooDailyQuote } from '@/lib/yahoo';
+import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, sparklinesFromSpark, yahooChartSymbol, type Candle, type YahooDailyQuote } from '@/lib/yahoo';
 
 // Daily Tadawul quotes from Yahoo Finance (free, no key, covers .SR), keyed by the symbol passed in.
 // One chart call per symbol (no batch endpoint without login) behind a shared 5-minute cache,
@@ -46,4 +46,41 @@ export async function getDailyCandles(symbol: string): Promise<Candle[]> {
         console.error('Yahoo candles error', symbol, e);
         return [];
     }
+}
+
+// A year of daily closes for each symbol, for the watchlist's mini charts. Yahoo's spark endpoint prices many
+// symbols per request but rejects more than 20 with a 400, so a long watchlist goes out in batches of 20. A
+// symbol Yahoo doesn't know is simply missing from the answer, and a failed batch costs only its own rows.
+// Cached for an hour: it's daily data, and the page already says it refreshes hourly.
+const SPARK_BATCH = 20;
+
+export async function getSparklines(symbols: string[]): Promise<Record<string, number[]>> {
+    const appSymbolsByYahoo = new Map<string, string[]>();
+    for (const symbol of symbols) {
+        const yahooSymbol = yahooChartSymbol(symbol);
+        if (yahooSymbol) appSymbolsByYahoo.set(yahooSymbol, [...(appSymbolsByYahoo.get(yahooSymbol) ?? []), symbol]);
+    }
+
+    const yahooSymbols = [...appSymbolsByYahoo.keys()];
+    const batches: string[][] = [];
+    for (let i = 0; i < yahooSymbols.length; i += SPARK_BATCH) batches.push(yahooSymbols.slice(i, i + SPARK_BATCH));
+
+    const out: Record<string, number[]> = {};
+    await Promise.all(
+        batches.map(async (batch) => {
+            try {
+                const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/spark?symbols=${batch.map(encodeURIComponent).join(',')}&range=1y&interval=1d`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                    next: { revalidate: 3600 },
+                });
+                if (!res.ok) return;
+                for (const [yahooSymbol, closes] of Object.entries(sparklinesFromSpark(await res.json()))) {
+                    for (const symbol of appSymbolsByYahoo.get(yahooSymbol) ?? []) out[symbol] = closes;
+                }
+            } catch (e) {
+                console.error('Yahoo spark error', batch, e);
+            }
+        }),
+    );
+    return out;
 }

@@ -100,6 +100,7 @@ declare global {
         params: Promise<{
             symbol: string;
         }>;
+        searchParams?: Promise<{ chart?: string }>;
     };
 
     type WatchlistButtonProps = {

@@ -50,7 +50,7 @@ const readSaved = (): string[] => {
     }
 };
 
-export default function StockChart({ tvSymbol, scriptUrl }: { tvSymbol: string; scriptUrl: string }) {
+export default function StockChart({ tvSymbol, scriptUrl, switchLink }: { tvSymbol: string; scriptUrl: string; switchLink?: React.ReactNode }) {
     // null until the browser's saved list is read, so the chart mounts once with the right indicators
     const [picked, setPicked] = useState<string[] | null>(null);
     useEffect(() => setPicked(readSaved()), []);
@@ -87,7 +87,7 @@ export default function StockChart({ tvSymbol, scriptUrl }: { tvSymbol: string; 
     );
 
     return (
-        <Panel title="Chart" sub="Live from TradingView · switch interval and style in the chart" action={menu}>
+        <Panel title="Chart" sub="Live from TradingView · switch interval and style in the chart" action={switchLink ? <div className="flex items-center gap-2">{switchLink}{menu}</div> : menu}>
             {studies ? (
                 <TradingViewWidget scriptUrl={scriptUrl} config={{ ...CANDLE_CHART_WIDGET_CONFIG(tvSymbol), studies }} height={CHART_HEIGHT} allowExpand />
             ) : (

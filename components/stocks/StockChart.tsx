@@ -31,15 +31,22 @@ const INDICATORS: Indicator[] = [
 
 const SECTIONS = [...new Set(INDICATORS.map((i) => i.section))];
 const STORAGE_KEY = 'openstock:chart-indicators';
+// On a browser that has never opened the menu. Unchecking everything is remembered as an empty
+// list, so these come back only for a genuinely new browser, not after you clear them on purpose.
+const DEFAULT_PICKS = ['sma8', 'sma20', 'sma50', 'sma200'];
 const CHART_HEIGHT = 560;
+
+const inCatalogOrder = (keys: string[]) => INDICATORS.map((i) => i.key).filter((key) => keys.includes(key));
 
 const readSaved = (): string[] => {
     try {
-        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw === null) return inCatalogOrder(DEFAULT_PICKS); // nothing chosen in this browser yet
+        const saved = JSON.parse(raw);
         // Filtering against the catalog drops keys from an older build rather than passing them to TradingView
-        return Array.isArray(saved) ? INDICATORS.map((i) => i.key).filter((key) => saved.includes(key)) : [];
+        return Array.isArray(saved) ? inCatalogOrder(saved) : inCatalogOrder(DEFAULT_PICKS);
     } catch {
-        return [];
+        return inCatalogOrder(DEFAULT_PICKS); // private mode: defaults still apply for this visit
     }
 };
 
@@ -50,7 +57,7 @@ export default function StockChart({ tvSymbol, scriptUrl }: { tvSymbol: string; 
 
     const toggle = (key: string) => {
         const current = picked ?? [];
-        const next = INDICATORS.map((i) => i.key).filter((k) => (k === key ? !current.includes(key) : current.includes(k)));
+        const next = inCatalogOrder(current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
         setPicked(next);
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* private mode: still applies for this visit */ }
     };

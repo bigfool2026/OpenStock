@@ -33,8 +33,8 @@ const SECTIONS = [...new Set(INDICATORS.map((i) => i.section))];
 const STORAGE_KEY = 'openstock:chart-indicators';
 // On a browser that has never opened the menu. Unchecking everything is remembered as an empty
 // list, so these come back only for a genuinely new browser, not after you clear them on purpose.
-const DEFAULT_PICKS = ['sma8', 'sma20', 'sma50', 'sma200'];
-const CHART_HEIGHT = 560;
+const DEFAULT_PICKS = ['sma8', 'sma20', 'sma50', 'sma200', 'rsi', 'macd'];
+const CHART_HEIGHT = 760; // RSI and MACD each take their own pane below the candles
 
 const inCatalogOrder = (keys: string[]) => INDICATORS.map((i) => i.key).filter((key) => keys.includes(key));
 

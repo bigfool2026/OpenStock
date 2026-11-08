@@ -2,15 +2,13 @@ import { Suspense } from 'react';
 import { Plus } from 'lucide-react';
 import { getUserWatchlist } from '@/lib/actions/watchlist.actions';
 import { getUserAlerts } from '@/lib/actions/alert.actions';
-import { alertsEnabled } from '@/lib/market-data';
-import { getNews, getWatchlistData } from '@/lib/actions/finnhub.actions';
-import WatchlistTable from '@/components/watchlist/WatchlistTable';
+import { getNews } from '@/lib/actions/finnhub.actions';
+import WatchlistGroups from '@/components/watchlist/WatchlistGroups';
 import AlertsPanel from '@/components/watchlist/AlertsPanel';
 import NewsList from '@/components/watchlist/NewsList';
 import Panel from '@/components/Panel';
 import DataFreshness from '@/components/DataFreshness';
 import { SearchButton } from '@/components/SearchCommand';
-import { WATCHLIST_TAGS, UNTAGGED, TAG_BLURB, sortTags } from '@/lib/watchlist-tags';
 
 const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     <div className="row-list" aria-busy="true">
@@ -24,57 +22,15 @@ const RowsSkeleton = ({ rows = 4 }: { rows?: number }) => (
     </div>
 );
 
-type Item = { symbol: string; tags?: string[] };
-
-// One quote fetch for the whole watchlist, then split into group panels so a symbol
-// in both MAGS and SEMI is priced once and shown twice.
-async function Symbols({ items }: { items: Item[] }) {
-    const rows = await getWatchlistData(items.map((i) => i.symbol));
-    const tagsBySymbol = Object.fromEntries(items.map((i) => [i.symbol, sortTags(i.tags ?? [])]));
-
-    const groups = [...WATCHLIST_TAGS, UNTAGGED]
-        .map((tag) => ({
-            tag,
-            rows: rows.filter((r) =>
-                tag === UNTAGGED ? !tagsBySymbol[r.symbol]?.length : tagsBySymbol[r.symbol]?.includes(tag)
-            ),
-        }))
-        .filter((g) => g.rows.length > 0);
-
-    // Empty watchlist, or nothing categorised yet: one flat table, same as before.
-    if (groups.length <= 1) {
-        return (
-            <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
-                <WatchlistTable initialRows={rows} tagsBySymbol={tagsBySymbol} />
-            </Panel>
-        );
-    }
-
-    return (
-        <div className="flex flex-col gap-3">
-            {groups.map(({ tag, rows: groupRows }) => (
-                <Panel
-                    key={tag}
-                    title={tag}
-                    sub={`${groupRows.length} ${groupRows.length === 1 ? 'symbol' : 'symbols'} · ${TAG_BLURB[tag] ?? ''}`}
-                    action={<SearchButton className="btn btn-ghost"><Plus /> Add</SearchButton>}
-                >
-                    <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} emptyLabel="No symbols in this category" />
-                </Panel>
-            ))}
-        </div>
-    );
-}
-
 async function News({ symbols }: { symbols: string[] }) {
     return <NewsList news={await getNews(symbols).catch(() => [] as MarketNewsArticle[])} />;
 }
 
-// DB reads render first; everything from Finnhub streams in behind skeletons.
+// DB reads render first; everything from Finnhub and Yahoo streams in behind skeletons.
+// One full-width column: alerts as a slim strip on top, then the symbol tables, then news.
 export default async function WatchlistPage() {
     const [items, alerts] = await Promise.all([getUserWatchlist(), getUserAlerts()]);
     const symbols: string[] = items.map((item: { symbol: string }) => item.symbol);
-    const activeAlerts = alerts.filter((a: { triggered?: boolean }) => !a.triggered).length;
 
     return (
         <>
@@ -88,24 +44,23 @@ export default async function WatchlistPage() {
                 <SearchButton className="btn btn-primary"><Plus /> Add symbol</SearchButton>
             </header>
 
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
-                <div className="flex min-w-0 flex-col gap-3">
-                    <Suspense fallback={
-                        <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
-                            <RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />
-                        </Panel>
-                    }>
-                        <Symbols items={items} />
-                    </Suspense>
-                    <Panel title="News" sub={symbols.length ? 'Latest stories for the symbols you watch' : 'General market news'}>
-                        <Suspense fallback={<RowsSkeleton />}>
-                            <News symbols={symbols} />
-                        </Suspense>
-                    </Panel>
-                </div>
-
-                <Panel title="Alerts" sub={alertsEnabled ? `${activeAlerts} active · checked every 5 minutes` : 'An OpenStock Cloud feature'} className="self-start">
+            <div className="flex min-w-0 flex-col gap-3">
+                <Panel bodyClassName="px-3.5 py-3">
                     <AlertsPanel alerts={alerts} />
+                </Panel>
+
+                <Suspense fallback={
+                    <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
+                        <RowsSkeleton rows={Math.max(1, Math.min(symbols.length, 6))} />
+                    </Panel>
+                }>
+                    <WatchlistGroups items={items} />
+                </Suspense>
+
+                <Panel title="News" sub={symbols.length ? 'Latest stories for the symbols you watch' : 'General market news'}>
+                    <Suspense fallback={<RowsSkeleton />}>
+                        <News symbols={symbols} />
+                    </Suspense>
                 </Panel>
             </div>
         </>

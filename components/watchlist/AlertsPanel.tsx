@@ -44,61 +44,63 @@ export default function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
         }
     };
 
-    if (alerts.length === 0 && !alertsEnabled) {
-        return (
-            <div className="empty-state py-10">
-                <span className="empty-icon"><BellRing className="size-5" /></span>
-                <h3>Alerts come with Cloud</h3>
-                <p className="max-w-64 text-[13px]">Email price alerts are part of OpenStock Cloud, $5 a month and coming soon.</p>
-                <Link href="/#data" className="btn btn-ghost mt-2">See OpenStock Cloud</Link>
-            </div>
-        );
-    }
+    const active = alerts.filter((a) => !a.triggered).length;
+    const sub = alertsEnabled ? `${active} active · checked every 5 minutes` : 'An OpenStock Cloud feature';
 
-    if (alerts.length === 0) {
-        return (
-            <div className="empty-state py-10">
-                <span className="empty-icon"><BellRing className="size-5" /></span>
-                <h3>No alerts yet</h3>
-                <p className="max-w-60 text-[13px]">Use the bell on any row, or “Set alert” on a stock page. We email you when it fires.</p>
-            </div>
-        );
-    }
-
+    // A slim strip rather than a tall card: a title block, then either one line of explanation or a row of alerts.
     return (
-        <>
-            {!alertsEnabled && (
-                <p className="px-3 pt-3 pb-1 text-[12.5px] text-faint">
-                    Alerts moved to <Link href="/#data" className="text-brand-ink hover:underline">OpenStock Cloud</Link>, so these are paused.
-                </p>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+            <div className="flex flex-none items-center gap-2.5">
+                <BellRing className="size-4 text-faint" aria-hidden />
+                <div>
+                    <h2 className="section-title">Alerts</h2>
+                    <p className="section-sub">{sub}</p>
+                </div>
+            </div>
+
+            {alerts.length === 0 ? (
+                <>
+                    <p className="min-w-0 flex-1 text-[13px] text-faint">
+                        {alertsEnabled
+                            ? 'No alerts yet. Use the bell on any row, or “Set alert” on a stock page. We email you when it fires.'
+                            : 'Email price alerts are part of OpenStock Cloud, $5 a month and coming soon.'}
+                    </p>
+                    {!alertsEnabled && <Link href="/#data" className="btn btn-ghost flex-none">See OpenStock Cloud</Link>}
+                </>
+            ) : (
+                <>
+                    <ul className="flex min-w-0 flex-1 flex-wrap gap-2">
+                        {alerts.map((alert) => {
+                            const status = statusOf(alert);
+                            return (
+                                <li key={alert._id} className="flex items-center gap-2.5 rounded-[10px] border border-white/10 py-1 pl-2.5 pr-1">
+                                    <span className="mono font-semibold text-foreground">{alert.symbol}</span>
+                                    <span className="num whitespace-nowrap text-[12.5px] text-faint">
+                                        {alert.condition === 'ABOVE' ? 'Above' : 'Below'} {formatPrice(alert.targetPrice)}
+                                        {alert.expiresAt && !alert.triggered && ` · until ${new Date(alert.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                                    </span>
+                                    <span className={status.className}>{status.label}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDelete(alert)}
+                                        disabled={pendingId === alert._id}
+                                        className="icon-btn is-danger"
+                                        title="Remove alert"
+                                        aria-label={`Remove alert for ${alert.symbol}`}
+                                    >
+                                        <Trash2 />
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    {!alertsEnabled && (
+                        <p className="flex-none text-[12.5px] text-faint">
+                            Alerts moved to <Link href="/#data" className="text-brand-ink hover:underline">OpenStock Cloud</Link>, so these are paused.
+                        </p>
+                    )}
+                </>
             )}
-            <ul className="row-list">
-                {alerts.map((alert) => {
-                    const status = statusOf(alert);
-                    return (
-                        <li key={alert._id} className="flex items-center gap-3 px-3 py-2.5">
-                            <div className="min-w-0 flex-1">
-                                <p className="mono font-semibold text-foreground">{alert.symbol}</p>
-                                <p className="num truncate text-[12.5px] text-faint">
-                                    {alert.condition === 'ABOVE' ? 'Above' : 'Below'} {formatPrice(alert.targetPrice)}
-                                    {alert.expiresAt && !alert.triggered && ` · until ${new Date(alert.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
-                                </p>
-                            </div>
-                            <span className={status.className}>{status.label}</span>
-                            <button
-                                type="button"
-                                onClick={() => handleDelete(alert)}
-                                disabled={pendingId === alert._id}
-                                className="icon-btn is-danger"
-                                title="Remove alert"
-                                aria-label={`Remove alert for ${alert.symbol}`}
-                            >
-                                <Trash2 />
-                            </button>
-                        </li>
-                    );
-                })}
-            </ul>
-        </>
+        </div>
     );
 }

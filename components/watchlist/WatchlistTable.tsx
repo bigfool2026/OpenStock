@@ -6,6 +6,7 @@ import { Bell, Search, Star } from "lucide-react";
 import CreateAlertModal from "./CreateAlertModal";
 import WatchlistButton from "@/components/WatchlistButton";
 import TagPicker from "./TagPicker";
+import Sparkline from "./Sparkline";
 import ChangePill from "@/components/ChangePill";
 import PriceFlash from "@/components/PriceFlash";
 import { useLiveQuotes } from "@/hooks/useLiveQuotes";
@@ -20,10 +21,12 @@ const SUGGESTIONS = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'AMZN'];
 export default function WatchlistTable({
     initialRows,
     tagsBySymbol = {},
+    sparks = {},
     emptyLabel,
 }: {
     initialRows: Row[];
     tagsBySymbol?: Record<string, string[]>;
+    sparks?: Record<string, number[]>; // a year of daily closes per symbol
     emptyLabel?: string;
 }) {
     const [baseRows, setBaseRows] = useState(initialRows);
@@ -59,10 +62,22 @@ export default function WatchlistTable({
 
     return (
         <div className="overflow-x-auto rounded-[14px]">
-            <table className="data-table">
+            {/* Fixed column widths so Price, Today and the rest line up from one group panel to the next; the
+                company column takes whatever is left, and min-width keeps it from being squeezed out on narrow screens */}
+            <table className="data-table table-fixed min-w-[1140px]">
+                <colgroup>
+                    <col />
+                    <col className="hidden md:table-column" style={{ width: 252 }} />
+                    <col style={{ width: 128 }} />
+                    <col style={{ width: 120 }} />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 110 }} />
+                    <col style={{ width: 140 }} />
+                </colgroup>
                 <thead>
                     <tr>
                         <th>Company</th>
+                        <th className="hidden md:table-cell">1 year</th>
                         <th className="is-num">Price</th>
                         <th className="is-num">Today</th>
                         <th className="is-num">Change</th>
@@ -86,6 +101,7 @@ export default function WatchlistTable({
                                     </span>
                                 </Link>
                             </td>
+                            <td className="hidden md:table-cell"><Sparkline values={sparks[row.symbol]} width={216} height={40} /></td>
                             <td className="is-num font-semibold text-foreground">
                                 <PriceFlash value={row.price} className="px-1">{row.price ? formatPrice(row.price, row.currency) : '—'}</PriceFlash>
                             </td>

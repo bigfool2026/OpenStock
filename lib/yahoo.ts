@@ -1,3 +1,5 @@
+import type { Spark } from '@/lib/sparkline';
+
 // Yahoo Finance helpers for Tadawul (.SR) quotes, which TradingView's free embeds and Finnhub's free plan don't price.
 // Pure functions, covered by tests; the network call lives in lib/actions/yahoo.actions.ts.
 
@@ -115,20 +117,29 @@ type YahooSparkJson = {
     spark?: {
         result?: Array<{
             symbol?: string;
-            response?: Array<{ indicators?: { quote?: Array<{ close?: (number | null)[] }> } }>;
+            response?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: (number | null)[] }> } }>;
         }>;
     };
 };
 
-// Closing prices per symbol from a /v7/finance/spark response, which prices many symbols in one request.
-// Null closes are dropped, and a symbol with fewer than two prices is left out so the caller shows a dash.
-export function sparklinesFromSpark(json: unknown): Record<string, number[]> {
-    const out: Record<string, number[]> = {};
+// Daily closes and their times per symbol from a /v7/finance/spark response, which prices many symbols in one
+// request. A bar with a null close is dropped along with its timestamp so the two arrays stay aligned, and a
+// symbol with fewer than two prices is left out so the caller shows a dash.
+export function sparklinesFromSpark(json: unknown): Record<string, Spark> {
+    const out: Record<string, Spark> = {};
     for (const item of (json as YahooSparkJson)?.spark?.result ?? []) {
-        const closes = (item.response?.[0]?.indicators?.quote?.[0]?.close ?? []).filter(
-            (n): n is number => typeof n === 'number' && Number.isFinite(n),
-        );
-        if (item.symbol && closes.length >= 2) out[item.symbol] = closes;
+        const response = item.response?.[0];
+        const closes = response?.indicators?.quote?.[0]?.close ?? [];
+        const stamps = response?.timestamp ?? [];
+        const t: number[] = [];
+        const c: number[] = [];
+        closes.forEach((close, i) => {
+            if (typeof close === 'number' && Number.isFinite(close) && typeof stamps[i] === 'number') {
+                t.push(stamps[i]);
+                c.push(close);
+            }
+        });
+        if (item.symbol && c.length >= 2) out[item.symbol] = { t, c };
     }
     return out;
 }

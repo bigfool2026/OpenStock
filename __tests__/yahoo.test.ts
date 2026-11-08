@@ -116,11 +116,23 @@ describe('candlesFromChart', () => {
 });
 
 describe('sparklinesFromSpark', () => {
-    const item = (symbol: string, close: (number | null)[]) => ({ symbol, response: [{ indicators: { quote: [{ close }] } }] });
+    const item = (symbol: string, close: (number | null)[], timestamp: number[] = close.map((_, i) => 1000 + i)) => ({
+        symbol,
+        response: [{ timestamp, indicators: { quote: [{ close }] } }],
+    });
 
-    it('returns closes keyed by symbol, dropping null holes', () => {
-        const out = sparklinesFromSpark({ spark: { result: [item('AAPL', [1, null, 3, 4]), item('NVDA', [5, 6])] } });
-        expect(out).toEqual({ AAPL: [1, 3, 4], NVDA: [5, 6] });
+    it('returns closes with their times, keyed by symbol', () => {
+        const out = sparklinesFromSpark({ spark: { result: [item('AAPL', [1, 2, 3], [10, 20, 30]), item('NVDA', [5, 6])] } });
+        expect(out.AAPL).toEqual({ t: [10, 20, 30], c: [1, 2, 3] });
+        expect(out.NVDA.c).toEqual([5, 6]);
+    });
+    it('drops a null close together with its timestamp, so the arrays stay aligned', () => {
+        const out = sparklinesFromSpark({ spark: { result: [item('AAPL', [1, null, 3, 4], [10, 20, 30, 40])] } });
+        expect(out.AAPL).toEqual({ t: [10, 30, 40], c: [1, 3, 4] });
+    });
+    it('drops a bar whose timestamp is missing', () => {
+        const out = sparklinesFromSpark({ spark: { result: [item('AAPL', [1, 2, 3], [10, 20])] } });
+        expect(out.AAPL).toEqual({ t: [10, 20], c: [1, 2] });
     });
     it('leaves out a symbol with fewer than two prices', () => {
         const out = sparklinesFromSpark({ spark: { result: [item('NEW', [9]), item('GONE', [null, null]), item('OK', [1, 2])] } });

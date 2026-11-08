@@ -1,5 +1,6 @@
 'use server';
 
+import type { Spark } from '@/lib/sparkline';
 import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, sparklinesFromSpark, yahooChartSymbol, type Candle, type YahooDailyQuote } from '@/lib/yahoo';
 
 // Daily Tadawul quotes from Yahoo Finance (free, no key, covers .SR), keyed by the symbol passed in.
@@ -48,13 +49,13 @@ export async function getDailyCandles(symbol: string): Promise<Candle[]> {
     }
 }
 
-// A year of daily closes for each symbol, for the watchlist's mini charts. Yahoo's spark endpoint prices many
+// A year of daily closes (with their times) for each symbol, for the watchlist's mini charts. Yahoo's spark endpoint prices many
 // symbols per request but rejects more than 20 with a 400, so a long watchlist goes out in batches of 20. A
 // symbol Yahoo doesn't know is simply missing from the answer, and a failed batch costs only its own rows.
 // Cached for an hour: it's daily data, and the page already says it refreshes hourly.
 const SPARK_BATCH = 20;
 
-export async function getSparklines(symbols: string[]): Promise<Record<string, number[]>> {
+export async function getSparklines(symbols: string[]): Promise<Record<string, Spark>> {
     const appSymbolsByYahoo = new Map<string, string[]>();
     for (const symbol of symbols) {
         const yahooSymbol = yahooChartSymbol(symbol);
@@ -65,7 +66,7 @@ export async function getSparklines(symbols: string[]): Promise<Record<string, n
     const batches: string[][] = [];
     for (let i = 0; i < yahooSymbols.length; i += SPARK_BATCH) batches.push(yahooSymbols.slice(i, i + SPARK_BATCH));
 
-    const out: Record<string, number[]> = {};
+    const out: Record<string, Spark> = {};
     await Promise.all(
         batches.map(async (batch) => {
             try {
@@ -74,8 +75,8 @@ export async function getSparklines(symbols: string[]): Promise<Record<string, n
                     next: { revalidate: 3600 },
                 });
                 if (!res.ok) return;
-                for (const [yahooSymbol, closes] of Object.entries(sparklinesFromSpark(await res.json()))) {
-                    for (const symbol of appSymbolsByYahoo.get(yahooSymbol) ?? []) out[symbol] = closes;
+                for (const [yahooSymbol, spark] of Object.entries(sparklinesFromSpark(await res.json()))) {
+                    for (const symbol of appSymbolsByYahoo.get(yahooSymbol) ?? []) out[symbol] = spark;
                 }
             } catch (e) {
                 console.error('Yahoo spark error', batch, e);

@@ -4,6 +4,7 @@ import { getSparklines } from '@/lib/actions/yahoo.actions';
 import WatchlistTable from '@/components/watchlist/WatchlistTable';
 import Panel from '@/components/Panel';
 import { SearchButton } from '@/components/SearchCommand';
+import { ChartRangeProvider } from '@/components/watchlist/ChartRange';
 import { WATCHLIST_TAGS, UNTAGGED, TAG_BLURB, sortTags } from '@/lib/watchlist-tags';
 
 type Item = { symbol: string; tags?: string[] };
@@ -28,24 +29,28 @@ export default async function WatchlistGroups({ items }: { items: Item[] }) {
     // Empty watchlist, or nothing categorised yet: one flat table, same as before.
     if (groups.length <= 1) {
         return (
-            <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
-                <WatchlistTable initialRows={rows} tagsBySymbol={tagsBySymbol} sparks={sparks} />
-            </Panel>
+            <ChartRangeProvider>
+                <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
+                    <WatchlistTable initialRows={rows} tagsBySymbol={tagsBySymbol} sparks={sparks} />
+                </Panel>
+            </ChartRangeProvider>
         );
     }
 
     return (
-        <div className="flex flex-col gap-3">
-            {groups.map(({ tag, rows: groupRows }) => (
-                <Panel
-                    key={tag}
-                    title={tag}
-                    sub={`${groupRows.length} ${groupRows.length === 1 ? 'symbol' : 'symbols'} · ${TAG_BLURB[tag] ?? ''}`}
-                    action={<SearchButton className="btn btn-ghost"><Plus /> Add</SearchButton>}
-                >
-                    <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} sparks={sparks} emptyLabel="No symbols in this category" />
-                </Panel>
-            ))}
-        </div>
+        <ChartRangeProvider>
+            <div className="flex flex-col gap-3">
+                {groups.map(({ tag, rows: groupRows }) => (
+                    <Panel
+                        key={tag}
+                        title={tag}
+                        sub={`${groupRows.length} ${groupRows.length === 1 ? 'symbol' : 'symbols'} · ${TAG_BLURB[tag] ?? ''}`}
+                        action={<SearchButton className="btn btn-ghost"><Plus /> Add</SearchButton>}
+                    >
+                        <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} sparks={sparks} emptyLabel="No symbols in this category" />
+                    </Panel>
+                ))}
+            </div>
+        </ChartRangeProvider>
     );
 }

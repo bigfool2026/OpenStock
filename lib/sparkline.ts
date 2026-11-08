@@ -26,3 +26,28 @@ export function sparklineTrend(values: number[]): { change: number; up: boolean 
     const change = (values[values.length - 1] / values[0] - 1) * 100;
     return { change, up: change >= 0 };
 }
+
+// A symbol's daily closes with the time of each, as seconds. Parallel arrays rather than pairs: about 250 of each
+// per symbol crosses the server/client boundary for every row, and this serialises smaller.
+export type Spark = { t: number[]; c: number[] };
+
+// The windows the watchlist can show. All come out of the one year of data already fetched, so switching is free.
+export const SPARK_RANGES = [
+    { key: '3m', short: '3M', long: '3 months', months: 3 },
+    { key: '6m', short: '6M', long: '6 months', months: 6 },
+    { key: '1y', short: '1Y', long: '1 year', months: 12 },
+] as const;
+
+export type SparkRangeKey = (typeof SPARK_RANGES)[number]['key'];
+
+// Closes from the last `months` calendar months, counted back from the newest bar. Cutting by date rather than
+// by bar count matters: a year is about 250 bars for a stock and 365 for crypto, so "the last 63 bars" would be
+// three months of one and two of the other.
+export function sliceSpark(spark: Spark | undefined, months: number): number[] {
+    if (!spark || spark.c.length === 0) return [];
+    if (months >= 12) return spark.c; // the fetch is a year, so this is all of it
+    const cutoff = new Date(spark.t[spark.t.length - 1] * 1000);
+    cutoff.setUTCMonth(cutoff.getUTCMonth() - months);
+    const from = spark.t.findIndex((t) => t >= cutoff.getTime() / 1000);
+    return from === -1 ? [] : spark.c.slice(from);
+}

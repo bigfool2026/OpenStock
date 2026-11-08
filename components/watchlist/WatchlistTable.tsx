@@ -7,6 +7,8 @@ import CreateAlertModal from "./CreateAlertModal";
 import WatchlistButton from "@/components/WatchlistButton";
 import TagPicker from "./TagPicker";
 import Sparkline from "./Sparkline";
+import { RangeToggle, useChartRange } from "./ChartRange";
+import { sliceSpark, type Spark } from "@/lib/sparkline";
 import ChangePill from "@/components/ChangePill";
 import PriceFlash from "@/components/PriceFlash";
 import { useLiveQuotes } from "@/hooks/useLiveQuotes";
@@ -26,11 +28,12 @@ export default function WatchlistTable({
 }: {
     initialRows: Row[];
     tagsBySymbol?: Record<string, string[]>;
-    sparks?: Record<string, number[]>; // a year of daily closes per symbol
+    sparks?: Record<string, Spark>; // a year of daily closes per symbol; the chosen range is cut from it here
     emptyLabel?: string;
 }) {
     const [baseRows, setBaseRows] = useState(initialRows);
     const live = useLiveQuotes(baseRows.map((r) => r.symbol));
+    const { months, long } = useChartRange();
 
     // Server re-renders (after add/remove) replace the local copy
     useEffect(() => setBaseRows(initialRows), [initialRows]);
@@ -77,7 +80,7 @@ export default function WatchlistTable({
                 <thead>
                     <tr>
                         <th>Company</th>
-                        <th>1 year</th>
+                        <th><RangeToggle /></th>
                         <th className="is-num">Price</th>
                         <th className="is-num">Today</th>
                         <th className="is-num">Change</th>
@@ -101,7 +104,7 @@ export default function WatchlistTable({
                                     </span>
                                 </Link>
                             </td>
-                            <td><Sparkline values={sparks[row.symbol]} width={216} height={40} /></td>
+                            <td><Sparkline values={sliceSpark(sparks[row.symbol], months)} label={long} width={216} height={40} /></td>
                             <td className="is-num font-semibold text-foreground">
                                 <PriceFlash value={row.price} className="px-1">{row.price ? formatPrice(row.price, row.currency) : '—'}</PriceFlash>
                             </td>

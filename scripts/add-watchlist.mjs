@@ -3,6 +3,7 @@
 //   node scripts/add-watchlist.mjs "AAPL, MSFT, NVDA"
 //   node scripts/add-watchlist.mjs --tag SEMI NVDA AMD MU
 //   node scripts/add-watchlist.mjs --untag MAGS TSLA
+//   node scripts/add-watchlist.mjs --remove SNDK DRAM
 //   node scripts/add-watchlist.mjs --list
 //   node scripts/add-watchlist.mjs --user you@example.com AAPL MSFT
 import 'dotenv/config';
@@ -11,14 +12,15 @@ import { readFileSync } from 'node:fs';
 
 const MAX_WATCHLIST = 50;
 const argv = process.argv.slice(2);
-const TAGS = ['MAGS', 'SEMI', 'SaaS', 'Bonds', 'Commodity', 'Crypto'];
+const TAGS = ['MAGS', 'SEMI', 'SaaS', 'Bonds', 'Commodity', 'Crypto', 'Index']; // keep equal to lib/watchlist-tags.ts (a test checks)
 const matchTag = (v) => TAGS.find((t) => t.toLowerCase() === String(v).trim().toLowerCase());
 
-let email = null, tag = null, untag = null, listOnly = false;
+let email = null, tag = null, untag = null, listOnly = false, removeOnly = false;
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--user') { email = argv[++i]; continue; }
     if (argv[i] === '--list') { listOnly = true; continue; }
+    if (argv[i] === '--remove') { removeOnly = true; continue; }
     if (argv[i] === '--tag' || argv[i] === '--untag') {
         const flag = argv[i], raw = argv[++i], hit = matchTag(raw);
         if (!hit) { console.error(`Unknown category "${raw}". Use one of: ${TAGS.join(', ')}`); process.exit(1); }
@@ -57,6 +59,15 @@ if (listOnly) {
         if (inTag.length) console.log(`${t.padEnd(12)} ${inTag.map(d => d.symbol).join(' ')}`);
     }
     console.log(`\n${all.length}/${MAX_WATCHLIST} symbols.`);
+    await mongoose.connection.close();
+    process.exit(0);
+}
+
+if (removeOnly) {
+    // Same as unstarring in the app: the symbol leaves the watchlist; alerts are a separate collection and stay
+    const r = await db.collection('watchlists').deleteMany({ userId, symbol: { $in: symbols } });
+    const left = await db.collection('watchlists').countDocuments({ userId });
+    console.log(`Removed ${r.deletedCount} of ${symbols.length} from the watchlist: ${symbols.join(' ')}  (${left}/${MAX_WATCHLIST} left)`);
     await mongoose.connection.close();
     process.exit(0);
 }

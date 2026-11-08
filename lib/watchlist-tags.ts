@@ -1,5 +1,6 @@
 // Watchlist categories. Client-safe: imported by both server actions and client components.
-export const WATCHLIST_TAGS = ['MAGS', 'SEMI', 'SaaS', 'Bonds', 'Commodity', 'Crypto'] as const;
+// scripts/add-watchlist.mjs keeps its own copy of this list (it can't import TypeScript); a test keeps the two equal.
+export const WATCHLIST_TAGS = ['MAGS', 'SEMI', 'SaaS', 'Bonds', 'Commodity', 'Crypto', 'Index'] as const;
 
 export type WatchlistTag = (typeof WATCHLIST_TAGS)[number];
 
@@ -13,6 +14,7 @@ export const TAG_BLURB: Record<string, string> = {
     Bonds: 'Treasuries, credit and duration',
     Commodity: 'Energy, metals and agriculture',
     Crypto: 'Digital assets and proxies',
+    Index: 'Broad market index funds',
     [UNTAGGED]: 'Not in a category yet',
 };
 

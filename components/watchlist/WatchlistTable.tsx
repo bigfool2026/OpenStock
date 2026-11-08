@@ -67,7 +67,7 @@ export default function WatchlistTable({
             <table className="data-table table-fixed min-w-[1140px]">
                 <colgroup>
                     <col />
-                    <col className="hidden md:table-column" style={{ width: 252 }} />
+                    <col style={{ width: 252 }} />
                     <col style={{ width: 128 }} />
                     <col style={{ width: 120 }} />
                     <col style={{ width: 100 }} />
@@ -77,7 +77,7 @@ export default function WatchlistTable({
                 <thead>
                     <tr>
                         <th>Company</th>
-                        <th className="hidden md:table-cell">1 year</th>
+                        <th>1 year</th>
                         <th className="is-num">Price</th>
                         <th className="is-num">Today</th>
                         <th className="is-num">Change</th>
@@ -101,7 +101,7 @@ export default function WatchlistTable({
                                     </span>
                                 </Link>
                             </td>
-                            <td className="hidden md:table-cell"><Sparkline values={sparks[row.symbol]} width={216} height={40} /></td>
+                            <td><Sparkline values={sparks[row.symbol]} width={216} height={40} /></td>
                             <td className="is-num font-semibold text-foreground">
                                 <PriceFlash value={row.price} className="px-1">{row.price ? formatPrice(row.price, row.currency) : '—'}</PriceFlash>
                             </td>

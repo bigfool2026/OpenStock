@@ -186,3 +186,15 @@ describe('extendedQuotesFromSpark', () => {
         expect(extendedQuotesFromSpark(null)).toEqual({});
     });
 });
+
+describe('sparklinesFromSpark previous close', () => {
+    const json = { spark: { result: [{ symbol: 'NVDA', response: [{ meta: { previousClose: 186.64 }, timestamp: [1, 2, 3], indicators: { quote: [{ close: [176, null, 175] }] } }] }] } };
+    it('keeps it only when asked (the 1d window)', () => {
+        expect(sparklinesFromSpark(json).NVDA).toEqual({ t: [1, 3], c: [176, 175] });
+        expect(sparklinesFromSpark(json, true).NVDA).toEqual({ t: [1, 3], c: [176, 175], pc: 186.64 });
+    });
+    it('omits it when Yahoo sends none', () => {
+        const noMeta = { spark: { result: [{ symbol: 'X', response: [{ timestamp: [1, 2], indicators: { quote: [{ close: [1, 2] }] } }] }] } };
+        expect(sparklinesFromSpark(noMeta, true).X).toEqual({ t: [1, 2], c: [1, 2] });
+    });
+});

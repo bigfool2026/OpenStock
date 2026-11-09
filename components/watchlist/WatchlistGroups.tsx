@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { getWatchlistData } from '@/lib/actions/finnhub.actions';
-import { getExtendedQuotes, getSparklines } from '@/lib/actions/yahoo.actions';
+import { getExtendedQuotes, getIntradaySparklines, getSparklines } from '@/lib/actions/yahoo.actions';
 import WatchlistTable from '@/components/watchlist/WatchlistTable';
 import Panel from '@/components/Panel';
 import { SearchButton } from '@/components/SearchCommand';
@@ -14,7 +14,7 @@ type Item = { symbol: string; tags?: string[] };
 // Yahoo is down the rows just show a dash where the chart would be.
 export default async function WatchlistGroups({ items }: { items: Item[] }) {
     const symbols = items.map((i) => i.symbol);
-    const [rows, sparks, extended] = await Promise.all([getWatchlistData(symbols), getSparklines(symbols), getExtendedQuotes(symbols)]);
+    const [rows, sparks, intraday, extended] = await Promise.all([getWatchlistData(symbols), getSparklines(symbols), getIntradaySparklines(symbols), getExtendedQuotes(symbols)]);
     const tagsBySymbol = Object.fromEntries(items.map((i) => [i.symbol, sortTags(i.tags ?? [])]));
 
     const groups = [...WATCHLIST_TAGS, UNTAGGED]
@@ -31,7 +31,7 @@ export default async function WatchlistGroups({ items }: { items: Item[] }) {
         return (
             <ChartRangeProvider>
                 <Panel title="Symbols" sub="Click a row for charts, technicals and financials">
-                    <WatchlistTable initialRows={rows} tagsBySymbol={tagsBySymbol} sparks={sparks} extended={extended} />
+                    <WatchlistTable initialRows={rows} tagsBySymbol={tagsBySymbol} sparks={sparks} intraday={intraday} extended={extended} />
                 </Panel>
             </ChartRangeProvider>
         );
@@ -47,7 +47,7 @@ export default async function WatchlistGroups({ items }: { items: Item[] }) {
                         sub={`${groupRows.length} ${groupRows.length === 1 ? 'symbol' : 'symbols'} · ${TAG_BLURB[tag] ?? ''}`}
                         action={<SearchButton add tag={tag === UNTAGGED ? undefined : tag} className="btn btn-ghost"><Plus /> Add</SearchButton>}
                     >
-                        <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} sparks={sparks} extended={extended} emptyLabel="No symbols in this category" />
+                        <WatchlistTable initialRows={groupRows} tagsBySymbol={tagsBySymbol} sparks={sparks} intraday={intraday} extended={extended} emptyLabel="No symbols in this category" />
                     </Panel>
                 ))}
             </div>

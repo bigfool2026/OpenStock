@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SPARK_RANGES, sliceSpark, sparklinePoints, sparklineTrend, type Spark } from '@/lib/sparkline';
+import { SPARK_RANGES, sliceSpark, sparklineLevelY, sparklinePoints, sparklineTrend, type Spark } from '@/lib/sparkline';
 
 describe('sparklinePoints', () => {
     it('puts the low at the bottom and the high at the top, inside the padding', () => {
@@ -80,8 +80,26 @@ describe('sliceSpark', () => {
 });
 
 describe('SPARK_RANGES', () => {
-    it('offers 3M, 6M and 1Y, shortest first', () => {
-        expect(SPARK_RANGES.map((r) => r.short)).toEqual(['3M', '6M', '1Y']);
-        expect(SPARK_RANGES.map((r) => r.months)).toEqual([3, 6, 12]);
+    it('offers 1D (15-minute bars), 3M, 6M and 1Y, shortest first', () => {
+        expect(SPARK_RANGES.map((r) => r.short)).toEqual(['1D', '3M', '6M', '1Y']);
+        expect(SPARK_RANGES.map((r) => r.months)).toEqual([0, 3, 6, 12]);
+    });
+});
+
+describe('intraday baseline (previous close)', () => {
+    it('measures the trend against the baseline, not the first bar', () => {
+        // Gapped down at the open: first bar -5% from the previous close, then flat
+        const t = sparklineTrend([95, 95, 95], 100);
+        expect(t?.change).toBeCloseTo(-5, 10);
+        expect(t?.up).toBe(false);
+        expect(sparklineTrend([95, 95, 95])?.change).toBe(0); // without it the day would look flat
+    });
+
+    it('stretches the scale to include the baseline without adding a point', () => {
+        const pts = sparklinePoints([10, 12], 100, 40, 2, 20);
+        expect(pts).toHaveLength(2);
+        expect(pts[0][1]).toBeGreaterThan(pts[1][1]); // 12 sits higher than 10
+        expect(pts[1][1]).toBeGreaterThan(2); // and neither reaches the top: 20 does
+        expect(sparklineLevelY(20, [10, 12], 40)).toBeCloseTo(2, 10);
     });
 });

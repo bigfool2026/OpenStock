@@ -55,7 +55,8 @@ export async function getDailyCandles(symbol: string): Promise<Candle[]> {
 // Cached for an hour: it's daily data, and the page already says it refreshes hourly.
 const SPARK_BATCH = 20;
 
-export async function getSparklines(symbols: string[]): Promise<Record<string, Spark>> {
+// Closes (with times) per app symbol from /v7/finance/spark, in batches of 20. `query` picks the window and bar size.
+async function fetchSparks(symbols: string[], query: string, revalidate: number, withPrevClose = false): Promise<Record<string, Spark>> {
     const appSymbolsByYahoo = new Map<string, string[]>();
     for (const symbol of symbols) {
         const yahooSymbol = yahooChartSymbol(symbol);
@@ -70,12 +71,12 @@ export async function getSparklines(symbols: string[]): Promise<Record<string, S
     await Promise.all(
         batches.map(async (batch) => {
             try {
-                const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/spark?symbols=${batch.map(encodeURIComponent).join(',')}&range=1y&interval=1d`, {
+                const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/spark?symbols=${batch.map(encodeURIComponent).join(',')}&${query}`, {
                     headers: { 'User-Agent': 'Mozilla/5.0' },
-                    next: { revalidate: 3600 },
+                    next: { revalidate },
                 });
                 if (!res.ok) return;
-                for (const [yahooSymbol, spark] of Object.entries(sparklinesFromSpark(await res.json()))) {
+                for (const [yahooSymbol, spark] of Object.entries(sparklinesFromSpark(await res.json(), withPrevClose))) {
                     for (const symbol of appSymbolsByYahoo.get(yahooSymbol) ?? []) out[symbol] = spark;
                 }
             } catch (e) {
@@ -84,6 +85,16 @@ export async function getSparklines(symbols: string[]): Promise<Record<string, S
         }),
     );
     return out;
+}
+
+export async function getSparklines(symbols: string[]): Promise<Record<string, Spark>> {
+    return fetchSparks(symbols, 'range=1y&interval=1d', 3600);
+}
+
+// Today's session in 15-minute bars (the last session when the market is closed), for the 1D range. Cached for a
+// minute: it is the one chart that changes during the day.
+export async function getIntradaySparklines(symbols: string[]): Promise<Record<string, Spark>> {
+    return fetchSparks(symbols, 'range=1d&interval=15m', 60, true);
 }
 
 // Pre-market and after-hours prices, keyed by the symbol passed in. Two days of 5-minute bars including extended

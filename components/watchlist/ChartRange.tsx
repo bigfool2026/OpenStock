@@ -39,7 +39,7 @@ export function ChartRangeProvider({ children }: { children: React.ReactNode }) 
 export function useChartRange() {
     const { range, setRange } = useContext(RangeContext);
     const current = SPARK_RANGES.find((r) => r.key === range) ?? SPARK_RANGES[SPARK_RANGES.length - 1];
-    return { range, setRange, months: current.months, long: current.long };
+    return { range, setRange, months: current.months, long: current.long, intraday: current.key === '1d' };
 }
 
 // Sits in each table's chart column header
@@ -53,7 +53,7 @@ export function RangeToggle() {
                     type="button"
                     onClick={() => setRange(r.key)}
                     aria-pressed={range === r.key}
-                    title={`Show the last ${r.long}`}
+                    title={r.key === '1d' ? 'Show today, in 15-minute bars' : `Show the last ${r.long}`}
                     className={cn(
                         'rounded px-1.5 py-0.5 text-[11px] font-bold tracking-wide transition-colors',
                         range === r.key ? 'bg-white/10 text-foreground' : 'text-faint hover:text-foreground',

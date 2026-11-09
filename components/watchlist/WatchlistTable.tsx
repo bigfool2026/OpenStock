@@ -25,18 +25,20 @@ export default function WatchlistTable({
     initialRows,
     tagsBySymbol = {},
     sparks = {},
+    intraday = {},
     extended = {},
     emptyLabel,
 }: {
     initialRows: Row[];
     tagsBySymbol?: Record<string, string[]>;
     sparks?: Record<string, Spark>; // a year of daily closes per symbol; the chosen range is cut from it here
+    intraday?: Record<string, Spark>; // today's 15-minute closes per symbol, for the 1D range
     extended?: Record<string, ExtendedQuote>; // pre-market / after-hours print per symbol, when the latest print is outside the regular session
     emptyLabel?: string;
 }) {
     const [baseRows, setBaseRows] = useState(initialRows);
     const live = useLiveQuotes(baseRows.map((r) => r.symbol));
-    const { months, long } = useChartRange();
+    const { months, long, intraday: showIntraday } = useChartRange();
 
     // Server re-renders (after add/remove) replace the local copy
     useEffect(() => setBaseRows(initialRows), [initialRows]);
@@ -107,7 +109,7 @@ export default function WatchlistTable({
                                     </span>
                                 </Link>
                             </td>
-                            <td><Sparkline values={sliceSpark(sparks[row.symbol], months)} label={long} width={216} height={40} /></td>
+                            <td><Sparkline values={showIntraday ? intraday[row.symbol]?.c : sliceSpark(sparks[row.symbol], months)} baseline={showIntraday ? intraday[row.symbol]?.pc : undefined} label={long} width={216} height={40} /></td>
                             <td className="is-num font-semibold text-foreground">
                                 <PriceFlash value={row.price} className="px-1">{row.price ? formatPrice(row.price, row.currency) : '—'}</PriceFlash>
                                 <ExtendedLine quote={extended[row.symbol]} currency={row.currency} />

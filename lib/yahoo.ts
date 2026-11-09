@@ -117,15 +117,16 @@ type YahooSparkJson = {
     spark?: {
         result?: Array<{
             symbol?: string;
-            response?: Array<{ timestamp?: number[]; indicators?: { quote?: Array<{ close?: (number | null)[] }> } }>;
+            response?: Array<{ meta?: { previousClose?: number }; timestamp?: number[]; indicators?: { quote?: Array<{ close?: (number | null)[] }> } }>;
         }>;
     };
 };
 
 // Daily closes and their times per symbol from a /v7/finance/spark response, which prices many symbols in one
 // request. A bar with a null close is dropped along with its timestamp so the two arrays stay aligned, and a
-// symbol with fewer than two prices is left out so the caller shows a dash.
-export function sparklinesFromSpark(json: unknown): Record<string, Spark> {
+// symbol with fewer than two prices is left out so the caller shows a dash. `withPrevClose` (for a 1d window) also keeps
+// Yahoo's previous close, which an intraday chart is measured against.
+export function sparklinesFromSpark(json: unknown, withPrevClose = false): Record<string, Spark> {
     const out: Record<string, Spark> = {};
     for (const item of (json as YahooSparkJson)?.spark?.result ?? []) {
         const response = item.response?.[0];
@@ -139,7 +140,8 @@ export function sparklinesFromSpark(json: unknown): Record<string, Spark> {
                 c.push(close);
             }
         });
-        if (item.symbol && c.length >= 2) out[item.symbol] = { t, c };
+        const pc = response?.meta?.previousClose;
+        if (item.symbol && c.length >= 2) out[item.symbol] = withPrevClose && typeof pc === 'number' && pc > 0 ? { t, c, pc } : { t, c };
     }
     return out;
 }

@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
     // With Schwab on, everything it prices rides one shared batch call, so only the rest is counted per symbol
     // (a 2s poll is 30 requests a minute, well under the cap).
     const cost = schwabEnabled() ? Math.max(1, symbols.filter((s) => !schwabSymbol(s)).length) : symbols.length;
-    if (await isRateLimited(`quotes:user:${session.user.id}`, 300, 60, cost)) {
+    // Every watchlist table polls separately, so one open tab makes ~10 requests per tick; they are cheap (shared cache).
+    if (await isRateLimited(`quotes:user:${session.user.id}`, schwabEnabled() ? 1200 : 300, 60, cost)) {
         return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 

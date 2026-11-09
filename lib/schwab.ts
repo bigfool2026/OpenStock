@@ -16,13 +16,15 @@ const QUOTE_TTL_MS = 1_500; // Schwab allows ~120 requests/min; one batch call c
 const BATCH = 100;
 const TIMEOUT_MS = 5_000;
 const FAILURE_BACKOFF_MS = 60_000;
+const SEEN_WINDOW_MS = 30_000; // symbols asked for recently are refreshed together
 const REFRESH_TOKEN_LIFE_S = 7 * 24 * 3600;
 
 type TokenFile = { access_token?: string; refresh_token?: string; expires_at?: number; refresh_token_issued_at?: number };
 type Cached = { quote: SchwabQuote; until: number };
 
 const quoteCache = new Map<string, Cached>();
-const inFlight = new Map<string, Promise<Record<string, SchwabQuote>>>();
+const seen = new Map<string, number>(); // app symbol -> last time anyone asked for it
+let refreshInFlight: Promise<void> | null = null;
 let memToken: { access: string; expiresAt: number } | null = null; // our own refreshed copy (seconds)
 let refreshing: Promise<string | null> | null = null;
 let blockedUntil = 0;
@@ -85,39 +87,56 @@ async function fetchBatch(schwabSymbols: string[], byApp: Map<string, string[]>)
     return quotesFromSchwab(await res.json(), byApp);
 }
 
+// One refresh for everything stale that anyone asked for lately. The watchlist is several tables, each polling its own
+// symbols every couple of seconds; refreshing them together keeps Schwab at ~1 call per poll tick however many tables
+// are on screen (its limit is ~120/min).
+async function refreshStale(): Promise<void> {
+    const now = Date.now();
+    const byApp = new Map<string, string[]>(); // schwab symbol -> app symbols
+    for (const [app, at] of seen) {
+        if (now - at > SEEN_WINDOW_MS) { seen.delete(app); continue; }
+        if ((quoteCache.get(app)?.until ?? 0) > now) continue;
+        const sw = schwabSymbol(app);
+        if (sw) byApp.set(sw, [...(byApp.get(sw) ?? []), app]);
+    }
+    const all = [...byApp.keys()];
+    if (all.length === 0) return;
+    const batches: string[][] = [];
+    for (let i = 0; i < all.length; i += BATCH) batches.push(all.slice(i, i + BATCH));
+    let got = 0;
+    await Promise.all(batches.map(async (batch) => {
+        try {
+            const quotes = await fetchBatch(batch, byApp);
+            for (const [app, quote] of Object.entries(quotes)) {
+                quoteCache.set(app, { quote, until: Date.now() + QUOTE_TTL_MS });
+                got++;
+            }
+        } catch (e) {
+            warn(`quotes error: ${e instanceof Error ? e.message : 'unknown'}`);
+        }
+    }));
+    if (got === 0) blockedUntil = Date.now() + FAILURE_BACKOFF_MS; // don't hammer a broken login
+}
+
 // Fresh quotes for every symbol Schwab can price, keyed by the app symbol. Symbols it can't price are simply absent.
 export async function getSchwabQuotes(symbols: string[]): Promise<Record<string, SchwabQuote>> {
     if (!HOME || Date.now() < blockedUntil) return {};
-    const out: Record<string, SchwabQuote> = {};
-    const stale = new Map<string, string[]>(); // schwab symbol -> app symbols
+    const wanted = [...new Set(symbols)].filter((s) => schwabSymbol(s));
     const now = Date.now();
-    for (const s of new Set(symbols)) {
-        const sw = schwabSymbol(s);
-        if (!sw) continue;
-        const hit = quoteCache.get(s);
-        if (hit && hit.until > now) out[s] = hit.quote;
-        else stale.set(sw, [...(stale.get(sw) ?? []), s]);
-    }
-    if (stale.size === 0) return out;
+    for (const s of wanted) seen.set(s, now);
 
-    const all = [...stale.keys()];
-    const batches: string[][] = [];
-    for (let i = 0; i < all.length; i += BATCH) batches.push(all.slice(i, i + BATCH));
-    await Promise.all(batches.map(async (batch) => {
-        const key = batch.join(',');
-        let pending = inFlight.get(key);
-        if (!pending) {
-            pending = fetchBatch(batch, stale)
-                .catch((e) => { warn(`quotes error: ${e instanceof Error ? e.message : 'unknown'}`); return {} as Record<string, SchwabQuote>; })
-                .finally(() => inFlight.delete(key));
-            inFlight.set(key, pending);
-        }
-        const got = await pending;
-        if (Object.keys(got).length === 0) blockedUntil = Date.now() + FAILURE_BACKOFF_MS; // don't hammer a broken login
-        for (const [app, quote] of Object.entries(got)) {
-            quoteCache.set(app, { quote, until: Date.now() + QUOTE_TTL_MS });
-            out[app] = quote;
-        }
-    }));
+    const isFresh = (s: string) => (quoteCache.get(s)?.until ?? 0) > Date.now();
+    // At most two rounds: wait for a refresh already under way, then start one if some of ours are still stale
+    for (let round = 0; round < 2 && wanted.some((s) => !isFresh(s)); round++) {
+        if (refreshInFlight) { await refreshInFlight; continue; }
+        refreshInFlight = refreshStale().finally(() => { refreshInFlight = null; });
+        await refreshInFlight;
+    }
+
+    const out: Record<string, SchwabQuote> = {};
+    for (const s of wanted) {
+        const hit = quoteCache.get(s);
+        if (hit && hit.until > Date.now()) out[s] = hit.quote;
+    }
     return out;
 }

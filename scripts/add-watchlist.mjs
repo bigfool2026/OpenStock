@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 
 const MAX_WATCHLIST = 50;
 const argv = process.argv.slice(2);
-const TAGS = ['MAGS', 'SEMI', 'SaaS', 'Bonds', 'Commodity', 'Crypto', 'Index']; // keep equal to lib/watchlist-tags.ts (a test checks)
+const TAGS = ['MAGS', 'SEMI', 'SaaS', 'Bonds', 'Commodity', 'Crypto', 'Index', 'ETF']; // keep equal to lib/watchlist-tags.ts (a test checks)
 const matchTag = (v) => TAGS.find((t) => t.toLowerCase() === String(v).trim().toLowerCase());
 
 let email = null, tag = null, untag = null, listOnly = false, removeOnly = false;

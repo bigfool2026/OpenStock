@@ -8,6 +8,7 @@ import { hasFinnhubQuotes } from '@/lib/markets';
 import { getYahooDailyQuotes } from '@/lib/actions/yahoo.actions';
 import { isTadawulSymbol } from '@/lib/yahoo';
 import { getSession } from '@/lib/better-auth/auth';
+import { getSchwabQuotes } from '@/lib/schwab';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 // Key pool: each free key has its own 60 req/min, so N keys = N x the quota. Rotated per request.
@@ -186,8 +187,10 @@ export async function getQuote(symbol: string, revalidateSeconds = 0) {
 
 // Shared, short-lived quotes for anything shown live on screen (pages and /api/quotes)
 export async function getLiveQuotes(symbols: string[]) {
+    // Schwab (the owner's own real-time feed, when configured) prices what it can in one call; Finnhub covers the rest.
+    const schwab = await getSchwabQuotes(symbols);
     // Symbols the free plan can't price are skipped instead of spending a request on a 403
-    const quotes = await Promise.all(symbols.map((s) => (hasFinnhubQuotes(s) ? getQuote(s, LIVE_QUOTE_TTL) : null)));
+    const quotes = await Promise.all(symbols.map((s) => (schwab[s] ? schwab[s] : hasFinnhubQuotes(s) ? getQuote(s, LIVE_QUOTE_TTL) : null)));
     return Object.fromEntries(symbols.map((s, i) => [s, quotes[i]?.c ? quotes[i] : null]));
 }
 
@@ -229,13 +232,15 @@ export async function getWatchlistData(symbols: string[]) {
     // Finnhub free doesn't price Tadawul; Yahoo does (delayed)
     const saudi = await getYahooDailyQuotes(symbols.filter(isTadawulSymbol));
 
+    const schwab = await getSchwabQuotes(symbols);
+
     // Fetch quotes and profiles in parallel
     const promises = symbols.map(async (sym) => {
         const y = saudi[sym];
         if (y) return { symbol: sym, price: y.price, change: y.change, changePercent: y.changePercent, currency: y.currency, name: y.name || sym, logo: undefined, marketCap: undefined, peRatio: 0 };
         const covered = hasFinnhubQuotes(sym);
         const [quote, profile] = covered
-            ? await Promise.all([getQuote(sym, LIVE_QUOTE_TTL), getCompanyProfile(sym)])
+            ? await Promise.all([schwab[sym] ?? getQuote(sym, LIVE_QUOTE_TTL), getCompanyProfile(sym)])
             : [null, null];
 
         return {

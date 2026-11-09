@@ -1,7 +1,7 @@
 'use server';
 
 import type { Spark } from '@/lib/sparkline';
-import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, sparklinesFromSpark, yahooChartSymbol, type Candle, type YahooDailyQuote } from '@/lib/yahoo';
+import { candlesFromChart, dailyQuoteFromChart, extendedQuotesFromSpark, normalizeYahooSymbol, sparklinesFromSpark, yahooChartSymbol, type Candle, type ExtendedQuote, type YahooDailyQuote } from '@/lib/yahoo';
 
 // Daily Tadawul quotes from Yahoo Finance (free, no key, covers .SR), keyed by the symbol passed in.
 // One chart call per symbol (no batch endpoint without login) behind a shared 5-minute cache,
@@ -80,6 +80,40 @@ export async function getSparklines(symbols: string[]): Promise<Record<string, S
                 }
             } catch (e) {
                 console.error('Yahoo spark error', batch, e);
+            }
+        }),
+    );
+    return out;
+}
+
+// Pre-market and after-hours prices, keyed by the symbol passed in. Two days of 5-minute bars including extended
+// hours, 20 symbols per spark request, cached for a minute. Only symbols whose latest print is outside the regular
+// session come back, so during the day (or for crypto) the answer is empty. Never throws: a failed batch costs
+// only its own rows.
+export async function getExtendedQuotes(symbols: string[]): Promise<Record<string, ExtendedQuote>> {
+    const appSymbolsByYahoo = new Map<string, string[]>();
+    for (const symbol of symbols) {
+        const yahooSymbol = yahooChartSymbol(symbol);
+        if (yahooSymbol) appSymbolsByYahoo.set(yahooSymbol, [...(appSymbolsByYahoo.get(yahooSymbol) ?? []), symbol]);
+    }
+    const yahooSymbols = [...appSymbolsByYahoo.keys()];
+    const batches: string[][] = [];
+    for (let i = 0; i < yahooSymbols.length; i += SPARK_BATCH) batches.push(yahooSymbols.slice(i, i + SPARK_BATCH));
+
+    const out: Record<string, ExtendedQuote> = {};
+    await Promise.all(
+        batches.map(async (batch) => {
+            try {
+                const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/spark?symbols=${batch.map(encodeURIComponent).join(',')}&range=2d&interval=5m&includePrePost=true`, {
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                    next: { revalidate: 60 },
+                });
+                if (!res.ok) return;
+                for (const [yahooSymbol, quote] of Object.entries(extendedQuotesFromSpark(await res.json()))) {
+                    for (const symbol of appSymbolsByYahoo.get(yahooSymbol) ?? []) out[symbol] = quote;
+                }
+            } catch (e) {
+                console.error('Yahoo extended-hours error', batch, e);
             }
         }),
     );

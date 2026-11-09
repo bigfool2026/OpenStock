@@ -143,3 +143,64 @@ export function sparklinesFromSpark(json: unknown): Record<string, Spark> {
     }
     return out;
 }
+
+export type ExtendedQuote = {
+    session: 'pre' | 'post';
+    price: number;
+    change: number; // against the last regular-session close before it
+    changePercent: number;
+    t: number; // unix seconds of that print
+};
+
+type Window = { start?: number; end?: number };
+type YahooExtendedSparkJson = {
+    spark?: {
+        result?: Array<{
+            symbol?: string;
+            response?: Array<{
+                meta?: { tradingPeriods?: { pre?: Window[][]; regular?: Window[][]; post?: Window[][] } | unknown[] };
+                timestamp?: number[];
+                indicators?: { quote?: Array<{ close?: (number | null)[] }> };
+            }>;
+        }>;
+    };
+};
+
+const inAnyWindow = (t: number, windows: Window[][] | undefined) =>
+    (windows ?? []).some((day) => (day ?? []).some((w) => typeof w.start === 'number' && typeof w.end === 'number' && t >= w.start && t < w.end));
+
+// Pre-market / after-hours price per Yahoo symbol from a /v7/finance/spark response fetched with
+// includePrePost=true and intraday bars. Only the *latest* print counts: if it falls in a pre or post window
+// that is the extended price, and the change is measured from the last regular-session print before it. If the
+// latest print is from the regular session (market open, or the symbol has no extended hours, like crypto
+// or .SR) there is nothing to add, and the symbol is left out rather than guessed.
+export function extendedQuotesFromSpark(json: unknown): Record<string, ExtendedQuote> {
+    const out: Record<string, ExtendedQuote> = {};
+    for (const item of (json as YahooExtendedSparkJson)?.spark?.result ?? []) {
+        const response = item.response?.[0];
+        const periods = response?.meta?.tradingPeriods;
+        if (!item.symbol || !periods || Array.isArray(periods)) continue; // no extended-hours schedule
+        const stamps = response?.timestamp ?? [];
+        const closes = response?.indicators?.quote?.[0]?.close ?? [];
+
+        let last = -1;
+        for (let i = Math.min(stamps.length, closes.length) - 1; i >= 0; i--) {
+            if (typeof closes[i] === 'number' && Number.isFinite(closes[i])) { last = i; break; }
+        }
+        if (last < 0) continue;
+        const t = stamps[last];
+        const session = inAnyWindow(t, periods.post) ? 'post' : inAnyWindow(t, periods.pre) ? 'pre' : null;
+        if (!session) continue;
+
+        let ref: number | null = null;
+        for (let i = last - 1; i >= 0; i--) {
+            const c = closes[i];
+            if (typeof c === 'number' && Number.isFinite(c) && inAnyWindow(stamps[i], periods.regular)) { ref = c; break; }
+        }
+        if (!ref) continue;
+
+        const price = closes[last] as number;
+        out[item.symbol] = { session, price, change: price - ref, changePercent: ((price - ref) / ref) * 100, t };
+    }
+    return out;
+}

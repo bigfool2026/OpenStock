@@ -9,6 +9,7 @@ import TagPicker from "./TagPicker";
 import Sparkline from "./Sparkline";
 import { RangeToggle, useChartRange } from "./ChartRange";
 import { sliceSpark, type Spark } from "@/lib/sparkline";
+import type { ExtendedQuote } from "@/lib/yahoo";
 import ChangePill from "@/components/ChangePill";
 import PriceFlash from "@/components/PriceFlash";
 import { useLiveQuotes } from "@/hooks/useLiveQuotes";
@@ -24,11 +25,13 @@ export default function WatchlistTable({
     initialRows,
     tagsBySymbol = {},
     sparks = {},
+    extended = {},
     emptyLabel,
 }: {
     initialRows: Row[];
     tagsBySymbol?: Record<string, string[]>;
     sparks?: Record<string, Spark>; // a year of daily closes per symbol; the chosen range is cut from it here
+    extended?: Record<string, ExtendedQuote>; // pre-market / after-hours print per symbol, when the latest print is outside the regular session
     emptyLabel?: string;
 }) {
     const [baseRows, setBaseRows] = useState(initialRows);
@@ -67,11 +70,11 @@ export default function WatchlistTable({
         <div className="overflow-x-auto rounded-[14px]">
             {/* Fixed column widths so Price, Today and the rest line up from one group panel to the next; the
                 company column takes whatever is left, and min-width keeps it from being squeezed out on narrow screens */}
-            <table className="data-table table-fixed min-w-[1140px]">
+            <table className="data-table table-fixed min-w-[1184px]">
                 <colgroup>
                     <col />
                     <col style={{ width: 252 }} />
-                    <col style={{ width: 128 }} />
+                    <col style={{ width: 172 }} />
                     <col style={{ width: 120 }} />
                     <col style={{ width: 100 }} />
                     <col style={{ width: 110 }} />
@@ -107,6 +110,7 @@ export default function WatchlistTable({
                             <td><Sparkline values={sliceSpark(sparks[row.symbol], months)} label={long} width={216} height={40} /></td>
                             <td className="is-num font-semibold text-foreground">
                                 <PriceFlash value={row.price} className="px-1">{row.price ? formatPrice(row.price, row.currency) : '—'}</PriceFlash>
+                                <ExtendedLine quote={extended[row.symbol]} currency={row.currency} />
                             </td>
                             <td className="is-num"><ChangePill value={row.price ? row.changePercent : null} /></td>
                             <td className="is-num text-muted-foreground">{row.price ? `${row.change > 0 ? '+' : ''}${row.change.toFixed(2)}` : '—'}</td>
@@ -139,5 +143,20 @@ export default function WatchlistTable({
                 </tbody>
             </table>
         </div>
+    );
+}
+
+const EXTENDED_LABEL = { pre: 'Pre-market', post: 'After hours' } as const;
+
+// "After hours $188.08 +0.5%" under the regular price; the tooltip says when that print happened.
+function ExtendedLine({ quote, currency }: { quote?: ExtendedQuote; currency?: string }) {
+    if (!quote) return null;
+    const at = new Date(quote.t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    const up = quote.change >= 0;
+    return (
+        <span className="mt-0.5 block whitespace-nowrap px-1 text-[11px] font-normal text-faint" title={`${EXTENDED_LABEL[quote.session]} · last trade ${at} ET`}>
+            {EXTENDED_LABEL[quote.session]} {formatPrice(quote.price, currency)}{' '}
+            <span className={up ? 'text-up' : 'text-down'}>{up ? '+' : ''}{quote.changePercent.toFixed(2)}%</span>
+        </span>
     );
 }

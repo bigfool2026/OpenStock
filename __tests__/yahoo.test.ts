@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { candlesFromChart, dailyQuoteFromChart, normalizeYahooSymbol, sparklinesFromSpark, tadawulAppSymbol, yahooChartSymbol } from '@/lib/yahoo';
+import { candlesFromChart, dailyQuoteFromChart, extendedQuotesFromSpark, normalizeYahooSymbol, sparklinesFromSpark, tadawulAppSymbol, yahooChartSymbol } from '@/lib/yahoo';
 import { formatSymbolForTradingView, isChartEmbeddable } from '@/lib/utils';
 
 describe('Tadawul symbols', () => {
@@ -142,5 +142,47 @@ describe('sparklinesFromSpark', () => {
         expect(sparklinesFromSpark({ spark: { result: null, error: { code: 'x' } } })).toEqual({});
         expect(sparklinesFromSpark(null)).toEqual({});
         expect(sparklinesFromSpark({ spark: { result: [{ response: [] }] } })).toEqual({});
+    });
+});
+
+describe('extendedQuotesFromSpark', () => {
+    // One day: pre 100-200, regular 200-300, post 300-400 (seconds, small numbers keep the cases readable)
+    const day = { pre: [[{ start: 100, end: 200 }]], regular: [[{ start: 200, end: 300 }]], post: [[{ start: 300, end: 400 }]] };
+    const spark = (symbol: string, stamps: number[], close: (number | null)[], tradingPeriods: unknown = day) => ({
+        spark: { result: [{ symbol, response: [{ meta: { tradingPeriods }, timestamp: stamps, indicators: { quote: [{ close }] } }] }] },
+    });
+
+    it('prices after-hours against the last regular-session print', () => {
+        const q = extendedQuotesFromSpark(spark('NVDA', [210, 290, 310, 350], [99, 100, 101, 102]));
+        expect(q.NVDA.session).toBe('post');
+        expect(q.NVDA.price).toBe(102);
+        expect(q.NVDA.t).toBe(350);
+        expect(q.NVDA.change).toBeCloseTo(2);
+        expect(q.NVDA.changePercent).toBeCloseTo(2);
+    });
+
+    it('prices pre-market against the previous regular close, skipping null holes', () => {
+        const q = extendedQuotesFromSpark(spark('AMD', [210, 290, 150, 160], [99, 100, 105, null]));
+        expect(q.AMD.session).toBe('pre');
+        expect(q.AMD.price).toBe(105);
+        expect(q.AMD.t).toBe(150);
+        expect(q.AMD.changePercent).toBeCloseTo(5);
+    });
+
+    it('adds nothing while the regular session is the latest print', () => {
+        expect(extendedQuotesFromSpark(spark('MSFT', [150, 250, 260], [1, 2, 3]))).toEqual({});
+    });
+
+    it('adds nothing for symbols with no extended-hours schedule (crypto, .SR)', () => {
+        expect(extendedQuotesFromSpark(spark('BTC-USD', [250, 350], [1, 2], []))).toEqual({});
+    });
+
+    it('adds nothing when there is no regular print to measure the change from', () => {
+        expect(extendedQuotesFromSpark(spark('XLE', [310, 350], [1, 2]))).toEqual({});
+    });
+
+    it('survives an error or empty response', () => {
+        expect(extendedQuotesFromSpark({ spark: { result: null } })).toEqual({});
+        expect(extendedQuotesFromSpark(null)).toEqual({});
     });
 });

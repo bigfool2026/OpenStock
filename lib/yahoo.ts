@@ -72,7 +72,9 @@ export function yahooChartSymbol(symbol: string): string | null {
 }
 
 export type Candle = {
-    time: string; // YYYY-MM-DD in the exchange's own calendar, which is what a daily chart axis wants
+    // Daily and longer: YYYY-MM-DD in the exchange's own calendar. Intraday: the exchange's wall-clock time as epoch seconds
+    // (shifted so a chart that prints UTC shows local time).
+    time: string | number;
     open: number;
     high: number;
     low: number;
@@ -205,4 +207,98 @@ export function extendedQuotesFromSpark(json: unknown): Record<string, ExtendedQ
         out[item.symbol] = { session, price, change: price - ref, changePercent: ((price - ref) / ref) * 100, t };
     }
     return out;
+}
+
+// ---- Other timeframes -------------------------------------------------------------------------------------------------
+
+// Wall-clock time in an IANA zone, as epoch seconds read as if it were UTC. Done per bar: a 60-day or 2-year intraday
+// series crosses a daylight-saving change, so one fixed offset would shift everything before it by an hour.
+export function makeLocalSeconds(timeZone: string | undefined, fallbackOffset = 0) {
+    let fmt: Intl.DateTimeFormat | null = null;
+    try {
+        if (timeZone) fmt = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+    } catch { /* unknown zone: use the fixed offset */ }
+    return (t: number) => {
+        if (!fmt) return t + fallbackOffset;
+        const p = Object.fromEntries(fmt.formatToParts(new Date(t * 1000)).map((x) => [x.type, Number(x.value)]));
+        return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second) / 1000;
+    };
+}
+
+type YahooIntradayJson = {
+    chart?: {
+        result?: Array<{
+            meta?: { gmtoffset?: number; exchangeTimezoneName?: string };
+            timestamp?: number[];
+            indicators?: { quote?: Array<{ open?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; close?: (number | null)[]; volume?: (number | null)[] }> };
+        }>;
+    };
+};
+
+// Intraday bars from a /v8/finance/chart response. A bar missing any of o/h/l/c is dropped; two bars at one time keep
+// the later (the in-progress bar can appear twice).
+export function intradayCandlesFromChart(json: unknown): Candle[] {
+    const result = (json as YahooIntradayJson)?.chart?.result?.[0];
+    const quote = result?.indicators?.quote?.[0];
+    const stamps = result?.timestamp;
+    if (!stamps || !quote) return [];
+    const local = makeLocalSeconds(result?.meta?.exchangeTimezoneName, result?.meta?.gmtoffset ?? 0);
+    const byTime = new Map<number, Candle>();
+    stamps.forEach((t, i) => {
+        const open = quote.open?.[i];
+        const high = quote.high?.[i];
+        const low = quote.low?.[i];
+        const close = quote.close?.[i];
+        if (![open, high, low, close].every((n) => typeof n === 'number' && Number.isFinite(n))) return;
+        const time = local(t);
+        byTime.set(time, { time, open: open!, high: high!, low: low!, close: close!, volume: quote.volume?.[i] ?? 0 });
+    });
+    return [...byTime.values()].sort((a, b) => (a.time as number) - (b.time as number));
+}
+
+// Merges consecutive bars that share a key into one: first open, highest high, lowest low, last close, summed volume,
+// stamped with the first bar's time. Input must be in time order.
+export function aggregateCandles(candles: Candle[], keyOf: (c: Candle, index: number) => string): Candle[] {
+    const out: Candle[] = [];
+    let lastKey: string | null = null;
+    candles.forEach((c, i) => {
+        const key = keyOf(c, i);
+        const cur = out[out.length - 1];
+        if (key === lastKey && cur) {
+            cur.high = Math.max(cur.high, c.high);
+            cur.low = Math.min(cur.low, c.low);
+            cur.close = c.close;
+            cur.volume += c.volume;
+        } else {
+            out.push({ ...c });
+            lastKey = key;
+        }
+    });
+    return out;
+}
+
+// Keys for aggregating daily bars (time is YYYY-MM-DD) into longer ones.
+const dateOf = (c: Candle) => String(c.time);
+export const weekKey = (c: Candle) => {
+    // The Monday on or before this date: weeks start Monday, as on most charting sites
+    const d = new Date(`${dateOf(c)}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+};
+export const monthKey = (c: Candle) => dateOf(c).slice(0, 7);
+export const quarterKey = (c: Candle) => `${dateOf(c).slice(0, 4)}Q${Math.floor((Number(dateOf(c).slice(5, 7)) - 1) / 3)}`;
+export const yearKey = (c: Candle) => dateOf(c).slice(0, 4);
+
+// 4-hour bars from hourly ones: each session day is cut into runs of four bars (a US day, 9:30 to 16:00, becomes
+// 9:30-13:30 and 13:30-16:00), so a bar never spans two days.
+export function fourHourFromHourly(hourly: Candle[]): Candle[] {
+    let day = -1;
+    let n = 0;
+    let chunk = 0;
+    return aggregateCandles(hourly, (c) => {
+        const d = Math.floor((c.time as number) / 86400);
+        if (d !== day) { day = d; n = 0; }
+        chunk = Math.floor(n++ / 4);
+        return `${d}:${chunk}`;
+    });
 }

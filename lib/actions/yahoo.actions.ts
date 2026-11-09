@@ -1,6 +1,7 @@
 'use server';
 
 import type { Spark } from '@/lib/sparkline';
+import { getTimeframe, yahooChartQuery } from '@/lib/timeframes';
 import { candlesFromChart, dailyQuoteFromChart, extendedQuotesFromSpark, normalizeYahooSymbol, sparklinesFromSpark, yahooChartSymbol, type Candle, type ExtendedQuote, type YahooDailyQuote } from '@/lib/yahoo';
 
 // Daily Tadawul quotes from Yahoo Finance (free, no key, covers .SR), keyed by the symbol passed in.
@@ -45,6 +46,26 @@ export async function getDailyCandles(symbol: string): Promise<Candle[]> {
         return candles.length >= MIN_CANDLES ? candles : [];
     } catch (e) {
         console.error('Yahoo candles error', symbol, e);
+        return [];
+    }
+}
+
+// Candles for the stock page's timeframe menu. Server action, called from the chart when the user picks a timeframe.
+// [] means "nothing we trust" (unknown timeframe, unmapped symbol, Yahoo error, too few bars) and the chart keeps what it had.
+export async function getCandles(symbol: string, timeframe: string): Promise<Candle[]> {
+    const tf = getTimeframe(timeframe);
+    const yahooSymbol = yahooChartSymbol(symbol);
+    if (!tf || !yahooSymbol) return [];
+    try {
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?${yahooChartQuery(tf)}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            next: { revalidate: tf.revalidate },
+        });
+        if (!res.ok) return [];
+        const candles = tf.build(await res.json());
+        return candles.length >= 2 ? candles : [];
+    } catch (e) {
+        console.error('Yahoo candles error', symbol, timeframe, e);
         return [];
     }
 }

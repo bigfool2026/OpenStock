@@ -45,7 +45,7 @@ async function DividendYield({ symbol }: { symbol: string }) {
 async function ChartPanel({ symbol, tvSymbol, preferTradingView }: { symbol: string; tvSymbol: string; preferTradingView: boolean }) {
     const candles = await getDailyCandles(symbol);
     const native = candles.length > 0;
-    if (native && !preferTradingView) return <ColorChart candles={candles} />;
+    if (native && !preferTradingView) return <ColorChart key={symbol} symbol={symbol} candles={candles} />;
 
     const switchLink = native ? (
         <Link href="?" scroll={false} className="btn btn-ghost h-8 px-2.5 text-[13px]">Colour chart</Link>

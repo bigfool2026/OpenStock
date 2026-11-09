@@ -289,16 +289,18 @@ export const monthKey = (c: Candle) => dateOf(c).slice(0, 7);
 export const quarterKey = (c: Candle) => `${dateOf(c).slice(0, 4)}Q${Math.floor((Number(dateOf(c).slice(5, 7)) - 1) / 3)}`;
 export const yearKey = (c: Candle) => dateOf(c).slice(0, 4);
 
-// 4-hour bars from hourly ones: each session day is cut into runs of four bars (a US day, 9:30 to 16:00, becomes
-// 9:30-13:30 and 13:30-16:00), so a bar never spans two days.
-export function fourHourFromHourly(hourly: Candle[]): Candle[] {
+// Merges intraday bars into runs of `size` within each session day, so a bar never spans two days. A US day, 9:30 to
+// 16:00, cut into 4-hour bars becomes 9:30-13:30 and 13:30-16:00.
+export function groupIntradayBars(bars: Candle[], size: number): Candle[] {
     let day = -1;
     let n = 0;
-    let chunk = 0;
-    return aggregateCandles(hourly, (c) => {
+    return aggregateCandles(bars, (c) => {
         const d = Math.floor((c.time as number) / 86400);
         if (d !== day) { day = d; n = 0; }
-        chunk = Math.floor(n++ / 4);
-        return `${d}:${chunk}`;
+        return `${d}:${Math.floor(n++ / size)}`;
     });
 }
+
+// 4-hour bars from hourly ones (Yahoo) or from half-hour ones (Schwab, which has no hourly).
+export const fourHourFromHourly = (hourly: Candle[]) => groupIntradayBars(hourly, 4);
+export const fourHourFromHalfHourly = (halfHourly: Candle[]) => groupIntradayBars(halfHourly, 8);

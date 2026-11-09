@@ -1,4 +1,4 @@
-import { aggregateCandles, candlesFromChart, fourHourFromHourly, intradayCandlesFromChart, monthKey, quarterKey, weekKey, yearKey, type Candle } from '@/lib/yahoo';
+import { aggregateCandles, candlesFromChart, fourHourFromHalfHourly, fourHourFromHourly, intradayCandlesFromChart, monthKey, quarterKey, weekKey, yearKey, type Candle } from '@/lib/yahoo';
 
 // Chart timeframes. Yahoo only serves some of these directly (15m up to 60 days, hourly up to two years, daily); its
 // 3-month interval is really monthly and a long daily request is silently thinned to monthly, so weekly and longer are
@@ -15,16 +15,19 @@ export type Timeframe = {
     // Yahoo query for this timeframe. `from0` means the whole history (period1=0) rather than a fixed range.
     query: { interval: string; range?: string; from0?: boolean };
     build: (json: unknown) => Candle[];
+    // The same timeframe from Schwab's price history (the preferred source; Yahoo is the fallback). Intraday asks for
+    // `minute` bars over the last `days`; the rest are built from `years` of daily bars.
+    schwab: { minute?: { frequency: number; days: number }; years?: number; build: (bars: Candle[]) => Candle[] };
 };
 
 export const TIMEFRAMES: Timeframe[] = [
-    { key: '15m', label: '15 minutes', intraday: true, visibleBars: 130, revalidate: 60, query: { interval: '15m', range: '60d' }, build: intradayCandlesFromChart },
-    { key: '4h', label: '4 hours', intraday: true, visibleBars: 120, revalidate: 120, query: { interval: '60m', range: '730d' }, build: (j) => fourHourFromHourly(intradayCandlesFromChart(j)) },
-    { key: '1d', label: 'Daily', intraday: false, visibleBars: 250, revalidate: 300, query: { interval: '1d', range: '2y' }, build: candlesFromChart },
-    { key: '1w', label: 'Weekly', intraday: false, visibleBars: 260, revalidate: 600, query: { interval: '1d', range: '10y' }, build: (j) => aggregateCandles(candlesFromChart(j), weekKey) },
-    { key: '1mo', label: 'Monthly', intraday: false, visibleBars: 120, revalidate: 3600, query: { interval: '1d', from0: true }, build: (j) => aggregateCandles(candlesFromChart(j), monthKey) },
-    { key: '3mo', label: 'Quarterly', intraday: false, visibleBars: 80, revalidate: 3600, query: { interval: '1d', from0: true }, build: (j) => aggregateCandles(candlesFromChart(j), quarterKey) },
-    { key: '1y', label: 'Yearly', intraday: false, visibleBars: 60, revalidate: 3600, query: { interval: '1d', from0: true }, build: (j) => aggregateCandles(candlesFromChart(j), yearKey) },
+    { key: '15m', label: '15 minutes', intraday: true, visibleBars: 130, revalidate: 60, query: { interval: '15m', range: '60d' }, build: intradayCandlesFromChart, schwab: { minute: { frequency: 15, days: 60 }, build: (b) => b } },
+    { key: '4h', label: '4 hours', intraday: true, visibleBars: 120, revalidate: 120, query: { interval: '60m', range: '730d' }, build: (j) => fourHourFromHourly(intradayCandlesFromChart(j)), schwab: { minute: { frequency: 30, days: 270 }, build: fourHourFromHalfHourly } },
+    { key: '1d', label: 'Daily', intraday: false, visibleBars: 250, revalidate: 300, query: { interval: '1d', range: '2y' }, build: candlesFromChart, schwab: { years: 2, build: (b) => b } },
+    { key: '1w', label: 'Weekly', intraday: false, visibleBars: 260, revalidate: 600, query: { interval: '1d', range: '10y' }, build: (j) => aggregateCandles(candlesFromChart(j), weekKey), schwab: { years: 10, build: (b) => aggregateCandles(b, weekKey) } },
+    { key: '1mo', label: 'Monthly', intraday: false, visibleBars: 120, revalidate: 3600, query: { interval: '1d', from0: true }, build: (j) => aggregateCandles(candlesFromChart(j), monthKey), schwab: { years: 20, build: (b) => aggregateCandles(b, monthKey) } },
+    { key: '3mo', label: 'Quarterly', intraday: false, visibleBars: 80, revalidate: 3600, query: { interval: '1d', from0: true }, build: (j) => aggregateCandles(candlesFromChart(j), quarterKey), schwab: { years: 20, build: (b) => aggregateCandles(b, quarterKey) } },
+    { key: '1y', label: 'Yearly', intraday: false, visibleBars: 60, revalidate: 3600, query: { interval: '1d', from0: true }, build: (j) => aggregateCandles(candlesFromChart(j), yearKey), schwab: { years: 20, build: (b) => aggregateCandles(b, yearKey) } },
 ];
 
 export const DEFAULT_TIMEFRAME: TimeframeKey = '1d';

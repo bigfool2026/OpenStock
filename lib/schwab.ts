@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { quotesFromSchwab, schwabSymbol, type SchwabQuote } from '@/lib/schwab-quotes';
+import { candlesFromSchwab, quotesFromSchwab, schwabSymbol, withTodayBar, type SchwabQuote } from '@/lib/schwab-quotes';
+import type { Candle } from '@/lib/yahoo';
 
 // Real-time US quotes from the owner's own Schwab developer app. Opt-in: set SCHWAB_HOME to the folder where the
 // desktop market_indicator app keeps schwab_tokens.json and settings.json (schwab_key / schwab_secret). Nothing is
@@ -139,4 +140,94 @@ export async function getSchwabQuotes(symbols: string[]): Promise<Record<string,
         if (hit && hit.until > Date.now()) out[s] = hit.quote;
     }
     return out;
+}
+
+// ---- Price history ----------------------------------------------------------------------------------------------------
+// Charts, watchlist sparklines and the 1D chart come from /marketdata/v1/pricehistory, one request per symbol (there is no
+// batch form), so everything is cached and metered: a token bucket keeps history to ~70 requests a minute (a burst of 90 for a cold
+// page load), leaving room under Schwab's ~120/min for the quote polling. A symbol that can't be fetched returns [] and the caller falls back.
+
+const HISTORY_BURST = 90;
+const HISTORY_PER_SECOND = 1.2;
+let bucket = { tokens: HISTORY_BURST, at: Date.now() };
+
+async function takeHistoryToken() {
+    for (;;) {
+        const now = Date.now();
+        bucket = { tokens: Math.min(HISTORY_BURST, bucket.tokens + ((now - bucket.at) / 1000) * HISTORY_PER_SECOND), at: now };
+        if (bucket.tokens >= 1) { bucket.tokens -= 1; return; }
+        await new Promise((r) => setTimeout(r, 250));
+    }
+}
+
+const historyCache = new Map<string, { at: number; bars: Candle[] }>();
+const historyInFlight = new Map<string, Promise<Candle[]>>();
+const MAX_HISTORY_ENTRIES = 400;
+
+async function history(key: string, ttlMs: number, kind: 'daily' | 'intraday', params: Record<string, string | number>, wanted: (hit: Candle[]) => boolean = () => true): Promise<Candle[]> {
+    const hit = historyCache.get(key);
+    if (hit && Date.now() - hit.at < ttlMs && wanted(hit.bars)) return hit.bars;
+    let pending = historyInFlight.get(key);
+    if (!pending) {
+        pending = (async () => {
+            const token = await accessToken();
+            if (!token) return hit?.bars ?? [];
+            await takeHistoryToken();
+            const qs = new URLSearchParams(Object.entries({ needExtendedHoursData: 'false', ...params }).map(([k, v]) => [k, String(v)]));
+            const res = await fetch(`${API}/marketdata/v1/pricehistory?${qs}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000), cache: 'no-store' });
+            if (res.status === 401) memToken = null;
+            if (!res.ok) { warn(`price history failed (HTTP ${res.status})`); return hit?.bars ?? []; }
+            const bars = candlesFromSchwab(await res.json(), kind);
+            if (historyCache.size >= MAX_HISTORY_ENTRIES) historyCache.delete(historyCache.keys().next().value!);
+            historyCache.set(key, { at: Date.now(), bars });
+            return bars;
+        })()
+            .catch((e) => { warn(`price history error: ${e instanceof Error ? e.message : 'unknown'}`); return hit?.bars ?? []; })
+            .finally(() => historyInFlight.delete(key));
+        historyInFlight.set(key, pending);
+    }
+    return pending;
+}
+
+// Schwab's `period` for yearly history only takes these
+const YEAR_PERIODS = [1, 2, 3, 5, 10, 15, 20];
+
+// Daily bars for the last `years` (rounded up to a period Schwab accepts), plus today's bar built from the live quote while
+// the session is on. A longer span already cached for the symbol serves a shorter request, so one fetch feeds every view.
+// Cached an hour. [] when Schwab is off, can't price the symbol, or fails.
+export async function getSchwabDailyBars(symbol: string, years: number): Promise<Candle[]> {
+    const sw = HOME ? schwabSymbol(symbol) : null;
+    if (!sw) return [];
+    const period = YEAR_PERIODS.find((y) => y >= years) ?? 20;
+    let bars: Candle[] | undefined;
+    for (const p of YEAR_PERIODS.filter((y) => y >= period)) {
+        const hit = historyCache.get(`daily:${sw}:${p}`);
+        if (hit && Date.now() - hit.at < 3_600_000) { bars = hit.bars; break; }
+    }
+    bars ??= await history(`daily:${sw}:${period}`, 3_600_000, 'daily', { symbol: sw, periodType: 'year', period, frequencyType: 'daily', frequency: 1 });
+    if (bars.length === 0) return [];
+    const now = new Date();
+    const cutoff = `${now.getUTCFullYear() - period}${now.toISOString().slice(4, 10)}`;
+    const quote = (await getSchwabQuotes([symbol]))[symbol];
+    return withTodayBar(bars.filter((b) => String(b.time) >= cutoff), quote);
+}
+
+// Intraday bars of `frequency` minutes over the last `days` calendar days (regular hours). Cached `ttlMs`.
+export async function getSchwabMinuteBars(symbol: string, frequency: number, days: number, ttlMs: number): Promise<Candle[]> {
+    const sw = HOME ? schwabSymbol(symbol) : null;
+    if (!sw) return [];
+    const end = Date.now();
+    return history(`min:${sw}:${frequency}:${days}`, ttlMs, 'intraday', { symbol: sw, frequencyType: 'minute', frequency, startDate: end - days * 86_400_000, endDate: end });
+}
+
+// Closes of the most recent session in 15-minute bars, for the watchlist's 1D chart; the last bar's date finds that session
+// (today, or the last trading day on a weekend). Cached 3 minutes: a 15-minute bar changes slowly.
+export async function getSchwabIntradayCloses(symbol: string): Promise<{ t: number[]; c: number[] } | null> {
+    const bars = await getSchwabMinuteBars(symbol, 15, 5, 180_000);
+    if (bars.length === 0) return null;
+    // Wall-clock seconds read as UTC, so the UTC date of a bar is its New York date
+    const dayOf = (b: Candle) => new Date((b.time as number) * 1000).toISOString().slice(0, 10);
+    const last = dayOf(bars[bars.length - 1]);
+    const session = bars.filter((b) => dayOf(b) === last);
+    return session.length >= 2 ? { t: session.map((b) => b.time as number), c: session.map((b) => b.close) } : null;
 }

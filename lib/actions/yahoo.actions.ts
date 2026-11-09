@@ -2,6 +2,8 @@
 
 import type { Spark } from '@/lib/sparkline';
 import { getTimeframe, yahooChartQuery } from '@/lib/timeframes';
+import { getSchwabDailyBars, getSchwabIntradayCloses, getSchwabMinuteBars, getSchwabQuotes, schwabEnabled } from '@/lib/schwab';
+import { schwabSymbol } from '@/lib/schwab-quotes';
 import { candlesFromChart, dailyQuoteFromChart, extendedQuotesFromSpark, normalizeYahooSymbol, sparklinesFromSpark, yahooChartSymbol, type Candle, type ExtendedQuote, type YahooDailyQuote } from '@/lib/yahoo';
 
 // Daily Tadawul quotes from Yahoo Finance (free, no key, covers .SR), keyed by the symbol passed in.
@@ -34,6 +36,9 @@ export async function getYahooDailyQuotes(symbols: string[]): Promise<Record<str
 const MIN_CANDLES = 30;
 
 export async function getDailyCandles(symbol: string): Promise<Candle[]> {
+    // Schwab first (our own login, no scraping); Yahoo only when it can't price the symbol or fails
+    const fromSchwab = await getSchwabDailyBars(symbol, 2);
+    if (fromSchwab.length >= MIN_CANDLES) return fromSchwab;
     const yahooSymbol = yahooChartSymbol(symbol);
     if (!yahooSymbol) return [];
     try {
@@ -54,8 +59,15 @@ export async function getDailyCandles(symbol: string): Promise<Candle[]> {
 // [] means "nothing we trust" (unknown timeframe, unmapped symbol, Yahoo error, too few bars) and the chart keeps what it had.
 export async function getCandles(symbol: string, timeframe: string): Promise<Candle[]> {
     const tf = getTimeframe(timeframe);
+    if (!tf) return [];
+    if (schwabEnabled() && schwabSymbol(symbol)) {
+        const { minute, years, build } = tf.schwab;
+        const bars = minute ? await getSchwabMinuteBars(symbol, minute.frequency, minute.days, tf.revalidate * 1000) : await getSchwabDailyBars(symbol, years ?? 2);
+        const out = build(bars);
+        if (out.length >= 2) return out;
+    }
     const yahooSymbol = yahooChartSymbol(symbol);
-    if (!tf || !yahooSymbol) return [];
+    if (!yahooSymbol) return [];
     try {
         const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?${yahooChartQuery(tf)}`, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -109,13 +121,32 @@ async function fetchSparks(symbols: string[], query: string, revalidate: number,
 }
 
 export async function getSparklines(symbols: string[]): Promise<Record<string, Spark>> {
-    return fetchSparks(symbols, 'range=1y&interval=1d', 3600);
+    const out: Record<string, Spark> = {};
+    if (schwabEnabled()) {
+        await Promise.all(symbols.filter((s) => schwabSymbol(s)).map(async (s) => {
+            const bars = await getSchwabDailyBars(s, 1);
+            if (bars.length >= 2) out[s] = { t: bars.map((b) => Date.parse(`${b.time}T00:00:00Z`) / 1000), c: bars.map((b) => b.close) };
+        }));
+    }
+    // Yahoo only for what Schwab didn't give: crypto and non-US listings, or a failed fetch
+    const rest = symbols.filter((s) => !out[s]);
+    return rest.length ? { ...out, ...(await fetchSparks(rest, 'range=1y&interval=1d', 3600)) } : out;
 }
 
 // Today's session in 15-minute bars (the last session when the market is closed), for the 1D range. Cached for a
 // minute: it is the one chart that changes during the day.
 export async function getIntradaySparklines(symbols: string[]): Promise<Record<string, Spark>> {
-    return fetchSparks(symbols, 'range=1d&interval=15m', 60, true);
+    const out: Record<string, Spark> = {};
+    if (schwabEnabled()) {
+        const eligible = symbols.filter((s) => schwabSymbol(s));
+        const quotes = await getSchwabQuotes(eligible); // previous close, the baseline the chart is measured against
+        await Promise.all(eligible.map(async (s) => {
+            const closes = await getSchwabIntradayCloses(s);
+            if (closes) out[s] = { ...closes, ...(quotes[s]?.pc ? { pc: quotes[s].pc } : {}) };
+        }));
+    }
+    const rest = symbols.filter((s) => !out[s]);
+    return rest.length ? { ...out, ...(await fetchSparks(rest, 'range=1d&interval=15m', 60, true)) } : out;
 }
 
 // Pre-market and after-hours prices, keyed by the symbol passed in. Two days of 5-minute bars including extended

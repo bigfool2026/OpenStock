@@ -112,7 +112,7 @@ export default function WatchlistTable({
                             <td><Sparkline values={showIntraday ? intraday[row.symbol]?.c : sliceSpark(sparks[row.symbol], months)} baseline={showIntraday ? intraday[row.symbol]?.pc : undefined} label={long} width={216} height={40} /></td>
                             <td className="is-num font-semibold text-foreground">
                                 <PriceFlash value={row.price} className="px-1">{row.price ? formatPrice(row.price, row.currency) : '—'}</PriceFlash>
-                                <ExtendedLine quote={extended[row.symbol]} currency={row.currency} />
+                                <ExtendedLine quote={live[row.symbol] ? live[row.symbol]!.ext : extended[row.symbol]} currency={row.currency} />
                             </td>
                             <td className="is-num"><ChangePill value={row.price ? row.changePercent : null} /></td>
                             <td className="is-num text-muted-foreground">{row.price ? `${row.change > 0 ? '+' : ''}${row.change.toFixed(2)}` : '—'}</td>

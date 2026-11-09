@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { isRealtime, QUOTE_POLL_MS } from "@/lib/market-data";
+import type { ExtendedQuote } from "@/lib/yahoo";
 
-export type LiveQuote = { c?: number; d?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number; t?: number };
+export type LiveQuote = { c?: number; d?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number; t?: number; ext?: ExtendedQuote };
 
 // Realtime mode only: polls the shared /api/quotes cache while the tab is visible.
 // In cached mode prices come from the server render and refresh hourly for everyone.

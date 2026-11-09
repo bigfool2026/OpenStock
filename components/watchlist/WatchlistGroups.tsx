@@ -1,6 +1,8 @@
 import { Plus } from 'lucide-react';
 import { getWatchlistData } from '@/lib/actions/finnhub.actions';
 import { getExtendedQuotes, getIntradaySparklines, getSparklines } from '@/lib/actions/yahoo.actions';
+import { getSchwabQuotes, schwabEnabled } from '@/lib/schwab';
+import type { ExtendedQuote } from '@/lib/yahoo';
 import WatchlistTable from '@/components/watchlist/WatchlistTable';
 import Panel from '@/components/Panel';
 import { SearchButton } from '@/components/SearchCommand';
@@ -9,12 +11,20 @@ import { WATCHLIST_TAGS, UNTAGGED, TAG_BLURB, sortTags } from '@/lib/watchlist-t
 
 type Item = { symbol: string; tags?: string[] };
 
+// After-hours prices ride along with the Schwab quotes (same call, cached), so with Schwab on there is no extra request at
+// all; Yahoo is only asked when Schwab is off.
+async function afterHours(symbols: string[]): Promise<Record<string, ExtendedQuote>> {
+    if (!schwabEnabled()) return getExtendedQuotes(symbols);
+    const quotes = await getSchwabQuotes(symbols);
+    return Object.fromEntries(Object.entries(quotes).flatMap(([symbol, q]) => (q.ext ? [[symbol, q.ext]] : [])));
+}
+
 // Quotes and the one-year charts are fetched once for the whole watchlist, in parallel, then split into group
 // panels, so a symbol in both MAGS and SEMI is priced once and drawn twice. getSparklines never throws: if
 // Yahoo is down the rows just show a dash where the chart would be.
 export default async function WatchlistGroups({ items }: { items: Item[] }) {
     const symbols = items.map((i) => i.symbol);
-    const [rows, sparks, intraday, extended] = await Promise.all([getWatchlistData(symbols), getSparklines(symbols), getIntradaySparklines(symbols), getExtendedQuotes(symbols)]);
+    const [rows, sparks, intraday, extended] = await Promise.all([getWatchlistData(symbols), getSparklines(symbols), getIntradaySparklines(symbols), afterHours(symbols)]);
     const tagsBySymbol = Object.fromEntries(items.map((i) => [i.symbol, sortTags(i.tags ?? [])]));
 
     const groups = [...WATCHLIST_TAGS, UNTAGGED]

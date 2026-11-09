@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { cookies } from "next/headers";
 import TradingViewWidget from "@/components/TradingViewWidget";
+import Heatmap from "@/components/Heatmap";
 import Panel from "@/components/Panel";
 import IndexPulse, { PulseSkeleton } from "@/components/IndexPulse";
 import DataFreshness from "@/components/DataFreshness";
@@ -71,7 +72,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                     )}
                     {heatmap ? (
                         <Panel title={heatmap.title} sub="Sized by market cap, coloured by today’s move">
-                            <TradingViewWidget scriptUrl={`${scriptUrl}${heatmap.script}`} config={heatmap.config} height={560} allowExpand />
+                            {/* The US heatmap is our own (TradingView's scanner feed): the embedded widget served stale moves. */}
+                            {heatmap.script === 'stock-heatmap.js'
+                                ? <Heatmap />
+                                : <TradingViewWidget scriptUrl={`${scriptUrl}${heatmap.script}`} config={heatmap.config} height={560} allowExpand />}
                         </Panel>
                     ) : (
                         <Panel title="Quotes" sub={`${market.name} leaders by group`}>

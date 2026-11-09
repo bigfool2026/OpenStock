@@ -1,26 +1,29 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { isRealtime } from "@/lib/market-data";
+import { isRealtime, QUOTE_POLL_MS } from "@/lib/market-data";
 
 export type LiveQuote = { c?: number; d?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number; t?: number };
 
 // Realtime mode only: polls the shared /api/quotes cache while the tab is visible.
 // In cached mode prices come from the server render and refresh hourly for everyone.
-export function useLiveQuotes(symbols: string[], intervalMs = 15_000) {
+export function useLiveQuotes(symbols: string[], intervalMs = QUOTE_POLL_MS) {
     const [quotes, setQuotes] = useState<Record<string, LiveQuote | null>>({});
     const key = symbols.join(",");
 
     useEffect(() => {
         if (!key || !isRealtime) return;
         let cancelled = false;
+        let busy = false; // a slow response must not stack requests behind it
 
         const load = async () => {
-            if (document.visibilityState !== "visible") return;
+            if (document.visibilityState !== "visible" || busy) return;
+            busy = true;
             try {
                 const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(key)}`);
                 if (res.ok && !cancelled) setQuotes(await res.json());
             } catch { /* keep the last good prices */ }
+            finally { busy = false; }
         };
         const onVisibility = () => { if (document.visibilityState === "visible") load(); };
 

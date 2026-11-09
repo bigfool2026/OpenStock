@@ -12,7 +12,7 @@ import { quotesFromSchwab, schwabSymbol, type SchwabQuote } from '@/lib/schwab-q
 
 const API = 'https://api.schwabapi.com';
 const HOME = process.env.SCHWAB_HOME?.trim();
-const QUOTE_TTL_MS = 5_000; // Schwab allows ~120 requests/min; one batch call covers the whole watchlist
+const QUOTE_TTL_MS = 1_500; // Schwab allows ~120 requests/min; one batch call covers the whole watchlist, so a 2s poll costs ~30/min
 const BATCH = 100;
 const TIMEOUT_MS = 5_000;
 const FAILURE_BACKOFF_MS = 60_000;

@@ -10,5 +10,10 @@ export const QUOTE_TTL_SECONDS = DATA_MODE === 'realtime' ? 15 : 3600;
 
 export const isRealtime = DATA_MODE === 'realtime';
 
+// How often an open tab asks for fresh prices in realtime mode. 15s suits Finnhub's free quota; with a Schwab feed
+// (lib/schwab.ts) 2s is fine, because one batch call covers the whole watchlist. Fixed at build time like the mode.
+const pollMs = Number(process.env.NEXT_PUBLIC_OPENSTOCK_POLL_MS);
+export const QUOTE_POLL_MS = Number.isFinite(pollMs) && pollMs >= 1000 ? pollMs : 15_000;
+
 // Email price alerts are an OpenStock Cloud feature: on in realtime mode (Cloud or self-hosted), off on the free hourly site.
 export const alertsEnabled = isRealtime;

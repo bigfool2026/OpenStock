@@ -10,7 +10,7 @@ const formatAmount = (value: number) =>
     value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: value < 1 ? 4 : 2 });
 
 // A pulse tile priced from our own quote cache. In realtime mode it refreshes on screen,
-// so the "Live · 15s" label is true; in cached mode it shows the server-rendered quote.
+// so the "Live" label is true; in cached mode it shows the server-rendered quote.
 export default function PulseTile({ symbol, label, initial }: { symbol: string; label: string; initial: LiveQuote | null }) {
     const live = useLiveQuotes([symbol]);
     const quote = live[symbol] ?? initial;
